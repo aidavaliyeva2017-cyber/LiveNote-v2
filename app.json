@@ -28,11 +28,6 @@
       "expo-notifications",
       "expo-secure-store",
       "expo-asset"
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "00000000-0000-0000-0000-000000000000"
-      }
-    }
+    ]
   }
 }
