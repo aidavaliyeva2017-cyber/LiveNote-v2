@@ -1,27 +1,70 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { colors, spacing, typography, borderRadius } from '../../theme';
 import { Card } from '../../components/common/Card';
 import { useLayout } from '../../hooks/useLayout';
 import { useEvents } from '../../context/EventsContext';
-import { formatDateLabel, formatTimeRange } from '../../utils/dateUtils';
+import { formatDateLabel, formatTimeRange, getGreeting, formatCountdown } from '../../utils/dateUtils';
 import { QuickAddModal, ParsedEventDraft } from '../../components/modals/QuickAddModal';
 import { EventConfirmationModal } from '../../components/modals/EventConfirmationModal';
 import { EventDetailModal } from '../../components/modals/EventDetailModal';
+import type { CalendarEvent } from '../../types/event';
 
 export const TodayDashboard: React.FC = () => {
   const { isLargeScreen } = useLayout();
-  const { events, addEvent, updateEvent, deleteEvent } = useEvents();
+  const { events, addEvent, updateEvent, deleteEvent, toggleComplete } = useEvents();
+  const [whatsOnExpanded, setWhatsOnExpanded] = useState(true);
   const [quickAddVisible, setQuickAddVisible] = useState(false);
   const [detailVisible, setDetailVisible] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [confirmationDraft, setConfirmationDraft] = useState<ParsedEventDraft | null>(null);
 
   const today = new Date();
-  const todaysEvents = events.filter(
-    (evt) =>
-      evt.start.toDateString() === today.toDateString(),
+  const todaysEvents = useMemo(
+    () =>
+      events
+        .filter((evt) => evt.start.toDateString() === today.toDateString())
+        .sort((a, b) => a.start.getTime() - b.start.getTime()),
+    [events, today],
   );
+
+  const greeting = getGreeting(today);
+
+  const completedToday = todaysEvents.filter((evt) => evt.completed);
+
+  const xpTotal = useMemo(() => events.filter((evt) => evt.completed).length, [events]);
+  const level = Math.floor(xpTotal / 10) + 1;
+  const currentLevelXP = xpTotal % 10;
+  const xpToNextLevel = 10 - currentLevelXP;
+
+  const computeStreak = (allEvents: CalendarEvent[]): number => {
+    let streak = 0;
+    const oneDayMs = 24 * 60 * 60 * 1000;
+    let cursor = new Date(today);
+    // Normalize to midnight
+    cursor.setHours(0, 0, 0, 0);
+
+    // Look backwards until a day without any completed events is found
+    // Cap at 365 to avoid infinite loops
+    for (let i = 0; i < 365; i++) {
+      const dayKey = cursor.toDateString();
+      const hasCompleted = allEvents.some(
+        (evt) => evt.completed && evt.start.toDateString() === dayKey,
+      );
+      if (!hasCompleted) break;
+      streak += 1;
+      cursor = new Date(cursor.getTime() - oneDayMs);
+    }
+    return streak;
+  };
+
+  const currentStreak = useMemo(() => computeStreak(events), [events]);
+
+  const now = today;
+  const upcomingToday = todaysEvents.filter(
+    (evt) => !evt.completed && evt.start.getTime() > now.getTime(),
+  );
+  const nextUp = upcomingToday.length > 0 ? upcomingToday[0] : null;
 
   const selectedEvent = todaysEvents.find((e) => e.id === selectedId) ?? null;
 
@@ -45,18 +88,56 @@ export const TodayDashboard: React.FC = () => {
         <View style={styles.header}>
           <View>
             <Text style={styles.dateText}>{formatDateLabel(today)}</Text>
-            <Text style={styles.greetingText}>Good morning!</Text>
+            <Text style={styles.greetingText}>{greeting}</Text>
           </View>
           <View style={styles.levelBadge}>
-            <Text style={styles.levelText}>LVL 3</Text>
-            <Text style={styles.levelSubText}>24 XP</Text>
+            <Text style={styles.levelText}>LVL {level}</Text>
+            <Text style={styles.levelSubText}>
+              {xpTotal} XP · {xpToNextLevel} to next
+            </Text>
           </View>
         </View>
 
-        <Card style={styles.whatsOnCard}>
-          <Text style={styles.sectionTitle}>✨ What's On</Text>
-          <Text style={styles.sectionSubtitle}>AI summary coming soon.</Text>
-        </Card>
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPress={() => setWhatsOnExpanded((v) => !v)}
+        >
+          <Card style={styles.whatsOnCard}>
+            <View style={styles.whatsOnHeaderRow}>
+              <Text style={styles.sectionTitle}>✨ What's On Today?</Text>
+              <Text style={styles.sectionSubtitle}>
+                {whatsOnExpanded ? 'Hide' : 'Show'}
+              </Text>
+            </View>
+            {whatsOnExpanded && (
+              <View style={styles.whatsOnBody}>
+                <Text style={styles.whatsOnSummary}>
+                  {todaysEvents.length === 0
+                    ? 'No tasks yet. Tell LiveNote what you need to do.'
+                    : `${todaysEvents.length} tasks • ${completedToday.length} completed`}
+                </Text>
+                <Text style={styles.whatsOnHint}>
+                  AI-powered daily summary will appear here once connected.
+                </Text>
+              </View>
+            )}
+          </Card>
+        </TouchableOpacity>
+
+        {nextUp && (
+          <Card style={styles.nextUpCard}>
+            <Text style={styles.nextUpLabel}>NEXT UP</Text>
+            <Text style={styles.nextUpTitle}>{nextUp.title}</Text>
+            <View style={styles.nextUpMetaRow}>
+              <Text style={styles.nextUpTime}>
+                {formatTimeRange(nextUp.start, nextUp.end)}
+              </Text>
+              <Text style={styles.nextUpCountdown}>
+                {formatCountdown(nextUp.start, now)}
+              </Text>
+            </View>
+          </Card>
+        )}
 
         <Card style={styles.placeholderCard}>
           <Text style={styles.sectionTitle}>Today's Schedule</Text>
@@ -65,25 +146,52 @@ export const TodayDashboard: React.FC = () => {
               No events yet. Tap + to add one.
             </Text>
           ) : (
-            todaysEvents.map((evt) => (
-              <TouchableOpacity
-                key={evt.id}
-                style={styles.eventRow}
-                onPress={() => {
-                  setSelectedId(evt.id);
-                  setDetailVisible(true);
-                }}
-              >
-                <View>
-                  <Text style={styles.eventTitle}>{evt.title}</Text>
-                  <Text style={styles.eventMeta}>
-                    {formatTimeRange(evt.start, evt.end)}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ))
+            todaysEvents.map((evt) => {
+              const isCompleted = !!evt.completed;
+              return (
+                <TouchableOpacity
+                  key={evt.id}
+                  style={[styles.eventRow, isCompleted && styles.eventRowCompleted]}
+                  onPress={() => {
+                    setSelectedId(evt.id);
+                    setDetailVisible(true);
+                  }}
+                >
+                  <TouchableOpacity
+                    style={styles.checkbox}
+                    onPress={() => toggleComplete(evt.id)}
+                  >
+                    <Text style={styles.checkboxIcon}>
+                      {isCompleted ? '●' : '○'}
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={styles.eventTextContainer}>
+                    <Text
+                      style={[
+                        styles.eventTitle,
+                        isCompleted && styles.eventTitleCompleted,
+                      ]}
+                    >
+                      {evt.title}
+                    </Text>
+                    <Text style={styles.eventMeta}>
+                      {formatTimeRange(evt.start, evt.end)}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
           )}
         </Card>
+
+        {currentStreak >= 3 && (
+          <Card style={styles.streakCard}>
+            <Text style={styles.streakLabel}>🔥 {currentStreak}-Day Streak!</Text>
+            <Text style={styles.streakText}>
+              Complete today&apos;s tasks to keep it going.
+            </Text>
+          </Card>
+        )}
       </ScrollView>
       <TouchableOpacity
         style={styles.fab}
