@@ -281,6 +281,55 @@ const styles = StyleSheet.create({
   whatsOnCard: {
     marginBottom: spacing.md,
   },
+  whatsOnHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  whatsOnBody: {
+    marginTop: spacing.sm,
+  },
+  whatsOnSummary: {
+    color: colors.textPrimary,
+    fontSize: typography.body,
+    fontWeight: typography.medium as any,
+  },
+  whatsOnHint: {
+    marginTop: spacing.xs,
+    color: colors.textSecondary,
+    fontSize: typography.caption,
+  },
+  nextUpCard: {
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
+  },
+  nextUpLabel: {
+    color: colors.primary,
+    fontSize: typography.tiny,
+    fontWeight: typography.semibold as any,
+    letterSpacing: 1,
+  },
+  nextUpTitle: {
+    marginTop: spacing.xs,
+    color: colors.textPrimary,
+    fontSize: typography.h2,
+    fontWeight: typography.bold as any,
+  },
+  nextUpMetaRow: {
+    marginTop: spacing.sm,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  nextUpTime: {
+    color: colors.textSecondary,
+    fontSize: typography.caption,
+  },
+  nextUpCountdown: {
+    color: colors.textSecondary,
+    fontSize: typography.caption,
+    fontWeight: typography.medium as any,
+  },
   placeholderCard: {
     marginTop: spacing.md,
   },
@@ -294,16 +343,57 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   eventRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  eventRowCompleted: {
+    opacity: 0.7,
+  },
+  checkbox: {
+    width: 28,
+    height: 28,
+    borderRadius: borderRadius.round,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceVariant,
+  },
+  checkboxIcon: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    marginTop: -1,
+  },
+  eventTextContainer: {
+    flex: 1,
   },
   eventTitle: {
     color: colors.textPrimary,
     fontSize: typography.body,
     fontWeight: typography.medium as any,
   },
+  eventTitleCompleted: {
+    textDecorationLine: 'line-through',
+    color: colors.textSecondary,
+  },
   eventMeta: {
+    color: colors.textSecondary,
+    fontSize: typography.caption,
+  },
+  streakCard: {
+    marginTop: spacing.md,
+  },
+  streakLabel: {
+    color: colors.accentYellow,
+    fontSize: typography.h3,
+    fontWeight: typography.bold as any,
+  },
+  streakText: {
+    marginTop: spacing.xs,
     color: colors.textSecondary,
     fontSize: typography.caption,
   },

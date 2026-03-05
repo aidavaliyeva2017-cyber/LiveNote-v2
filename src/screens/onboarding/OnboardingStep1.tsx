@@ -10,7 +10,7 @@ export const OnboardingStep1: React.FC<{ onNext?: () => void }> = ({ onNext }) =
       <Text style={styles.subtitle}>
         Let's set up your schedule in just a few steps.
       </Text>
-      <Button label=\"Let's Go!\" onPress={onNext ?? (() => {})} style={styles.button} />
+      <Button label="Let's Go!" onPress={onNext ?? (() => {})} style={styles.button} />
     </View>
   );
 };

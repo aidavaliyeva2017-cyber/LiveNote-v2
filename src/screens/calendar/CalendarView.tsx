@@ -5,8 +5,11 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  LayoutChangeEvent,
 } from 'react-native';
 import { Calendar, DateData } from 'react-native-calendars';
+import { LinearGradient } from 'expo-linear-gradient';
+import { addDays, addMonths, addWeeks, endOfWeek, format, startOfWeek } from 'date-fns';
 import { colors, spacing, typography, borderRadius } from '../../theme';
 import { useEvents } from '../../context/EventsContext';
 import { CalendarEvent, EventCategory } from '../../types/event';
@@ -18,9 +21,21 @@ import { EventDetailModal } from '../../components/modals/EventDetailModal';
 
 const formatDateKey = (date: Date) => date.toISOString().slice(0, 10);
 
+type CalendarMode = 'day' | 'week' | 'month';
+
+const CATEGORY_COLORS: Record<EventCategory, string> = {
+  work: colors.categoryWork,
+  personal: colors.categoryPersonal,
+  health: colors.categoryHealth,
+  social: colors.categorySocial,
+  errands: colors.categoryErrands,
+  hobbies: colors.categoryHobbies,
+};
+
 export const CalendarView: React.FC = () => {
   const { events, addEvent, updateEvent, deleteEvent } = useEvents();
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [mode, setMode] = useState<CalendarMode>('day');
   const [filterVisible, setFilterVisible] = useState(false);
   const [categories, setCategories] = useState<EventCategory[]>([
     'work',
@@ -34,6 +49,7 @@ export const CalendarView: React.FC = () => {
   const [confirmationDraft, setConfirmationDraft] = useState<ParsedEventDraft | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [timelineWidth, setTimelineWidth] = useState(0);
 
   const filteredEvents = events.filter((evt) => categories.includes(evt.category));
 
@@ -62,13 +78,10 @@ export const CalendarView: React.FC = () => {
 
   const handleDayPress = (day: DateData) => {
     setSelectedDate(new Date(day.dateString));
+    setMode('day');
   };
 
-  const handleToggleCategory = (cat: EventCategory) => {
-    setCategories((prev) =>
-      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat],
-    );
-  };
+  const handleCategoriesChange = (next: EventCategory[]) => setCategories(next);
 
   const handleParsed = (draft: ParsedEventDraft) => {
     setConfirmationDraft(draft);
@@ -79,47 +92,399 @@ export const CalendarView: React.FC = () => {
     setConfirmationDraft(null);
   };
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.headerRow}>
-        <Text style={styles.heading}>Calendar</Text>
-        <TouchableOpacity onPress={() => setFilterVisible(true)}>
-          <Text style={styles.filterText}>Filter ▾</Text>
+  const headerRangeLabel = useMemo(() => {
+    if (mode === 'month') return format(selectedDate, 'MMMM yyyy');
+    if (mode === 'week') {
+      const start = startOfWeek(selectedDate, { weekStartsOn: 0 });
+      const end = endOfWeek(selectedDate, { weekStartsOn: 0 });
+      return `${format(start, 'MMM d')} – ${format(end, 'MMM d')}`;
+    }
+    return format(selectedDate, 'EEEE, MMMM d');
+  }, [mode, selectedDate]);
+
+  const goPrev = () => {
+    setSelectedDate((d) => {
+      if (mode === 'month') return addMonths(d, -1);
+      if (mode === 'week') return addWeeks(d, -1);
+      return addDays(d, -1);
+    });
+  };
+
+  const goNext = () => {
+    setSelectedDate((d) => {
+      if (mode === 'month') return addMonths(d, 1);
+      if (mode === 'week') return addWeeks(d, 1);
+      return addDays(d, 1);
+    });
+  };
+
+  const handleTimelineLayout = (e: LayoutChangeEvent) => {
+    setTimelineWidth(e.nativeEvent.layout.width);
+  };
+
+  const dayTimeline = useMemo(() => {
+    const startHour = 6;
+    const endHour = 24;
+    const hourHeight = 64;
+    const pxPerMinute = hourHeight / 60;
+    const gutterWidth = 56;
+    const gap = 8;
+
+    const todays = dayEvents
+      .slice()
+      .sort((a, b) => a.start.getTime() - b.start.getTime())
+      .filter((evt) => {
+        // Clamp to timeline hours
+        const h = evt.end.getHours() + evt.end.getMinutes() / 60;
+        return h >= startHour;
+      });
+
+    type Placed = {
+      evt: CalendarEvent;
+      top: number;
+      height: number;
+      col: number;
+      cols: number;
+    };
+
+    // Build overlap clusters and assign columns greedily
+    const placed: Placed[] = [];
+    const clusters: CalendarEvent[][] = [];
+    let cluster: CalendarEvent[] = [];
+    let clusterEnd = -Infinity;
+    for (const evt of todays) {
+      const s = evt.start.getTime();
+      const e = evt.end.getTime();
+      if (cluster.length === 0) {
+        cluster = [evt];
+        clusterEnd = e;
+      } else if (s < clusterEnd) {
+        cluster.push(evt);
+        clusterEnd = Math.max(clusterEnd, e);
+      } else {
+        clusters.push(cluster);
+        cluster = [evt];
+        clusterEnd = e;
+      }
+    }
+    if (cluster.length) clusters.push(cluster);
+
+    for (const c of clusters) {
+      const cols: { endMs: number }[] = [];
+      const assignments = new Map<string, number>();
+      for (const evt of c) {
+        const sMs = evt.start.getTime();
+        const eMs = evt.end.getTime();
+        let idx = cols.findIndex((col) => col.endMs <= sMs);
+        if (idx === -1) {
+          idx = cols.length;
+          cols.push({ endMs: eMs });
+        } else {
+          cols[idx].endMs = eMs;
+        }
+        assignments.set(evt.id, idx);
+      }
+
+      const colCount = Math.max(1, cols.length);
+      for (const evt of c) {
+        const startMinutes = evt.start.getHours() * 60 + evt.start.getMinutes();
+        const endMinutes = evt.end.getHours() * 60 + evt.end.getMinutes();
+        const clampStart = Math.max(startHour * 60, startMinutes);
+        const clampEnd = Math.min(endHour * 60, Math.max(clampStart + 10, endMinutes));
+        const top = (clampStart - startHour * 60) * pxPerMinute;
+        const height = Math.max(28, (clampEnd - clampStart) * pxPerMinute);
+        placed.push({
+          evt,
+          top,
+          height,
+          col: assignments.get(evt.id) ?? 0,
+          cols: colCount,
+        });
+      }
+    }
+
+    const contentHeight = (endHour - startHour) * hourHeight;
+    const availableWidth = Math.max(0, timelineWidth - gutterWidth);
+
+    const blocks = placed.map((p) => {
+      const w =
+        p.cols <= 1
+          ? availableWidth
+          : Math.max(0, (availableWidth - gap * (p.cols - 1)) / p.cols);
+      const left = gutterWidth + p.col * (w + gap);
+      return { ...p, left, width: w };
+    });
+
+    const now = new Date();
+    const isToday = formatDateKey(now) === formatDateKey(selectedDate);
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const nowY = (nowMinutes - startHour * 60) * pxPerMinute;
+
+    return {
+      startHour,
+      endHour,
+      hourHeight,
+      gutterWidth,
+      contentHeight,
+      blocks,
+      showNow: isToday && nowMinutes >= startHour * 60 && nowMinutes <= endHour * 60,
+      nowY,
+    };
+  }, [dayEvents, selectedDate, timelineWidth]);
+
+  const monthEventsByDay = useMemo(() => {
+    const map = new Map<string, CalendarEvent[]>();
+    for (const evt of filteredEvents) {
+      const key = formatDateKey(evt.start);
+      const prev = map.get(key) ?? [];
+      prev.push(evt);
+      map.set(key, prev);
+    }
+    return map;
+  }, [filteredEvents]);
+
+  const renderModeSwitcher = () => {
+    const Seg = ({ value, label }: { value: CalendarMode; label: string }) => {
+      const active = mode === value;
+      return (
+        <TouchableOpacity
+          onPress={() => setMode(value)}
+          style={[styles.seg, active && styles.segActive]}
+        >
+          <Text style={[styles.segText, active && styles.segTextActive]}>{label}</Text>
         </TouchableOpacity>
+      );
+    };
+
+    return (
+      <View style={styles.segWrap}>
+        <Seg value="day" label="Day" />
+        <Seg value="week" label="Week" />
+        <Seg value="month" label="Month" />
       </View>
-      <Calendar
-        markedDates={markedDates}
-        onDayPress={handleDayPress}
-        theme={{
-          backgroundColor: colors.background,
-          calendarBackground: colors.surface,
-          dayTextColor: colors.textPrimary,
-          monthTextColor: colors.textPrimary,
-          arrowColor: colors.primary,
-        }}
-        style={styles.calendar}
-      />
-      <ScrollView style={styles.eventsContainer}>
-        {dayEvents.length === 0 ? (
-          <Text style={styles.subtitle}>No events for this day.</Text>
-        ) : (
-          dayEvents.map((evt) => (
+    );
+  };
+
+  const renderDateNav = () => (
+    <View style={styles.navRow}>
+      <TouchableOpacity style={styles.navBtn} onPress={goPrev} accessibilityRole="button">
+        <Text style={styles.navIcon}>‹</Text>
+      </TouchableOpacity>
+      <Text style={styles.navLabel}>{headerRangeLabel}</Text>
+      <TouchableOpacity style={styles.navBtn} onPress={goNext} accessibilityRole="button">
+        <Text style={styles.navIcon}>›</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderMonth = () => (
+    <Calendar
+      current={formatDateKey(selectedDate)}
+      markedDates={markedDates}
+      onDayPress={handleDayPress}
+      hideExtraDays={false}
+      firstDay={0}
+      enableSwipeMonths
+      theme={{
+        backgroundColor: 'transparent',
+        calendarBackground: 'transparent',
+        dayTextColor: colors.textSecondary,
+        monthTextColor: colors.textPrimary,
+        textDayFontSize: typography.caption,
+        textMonthFontSize: typography.body,
+        textMonthFontWeight: typography.semibold as any,
+        arrowColor: colors.textSecondary,
+        todayTextColor: colors.textPrimary,
+        'stylesheet.calendar.header': {
+          header: { height: 0, opacity: 0 },
+        },
+      }}
+      dayComponent={({ date }: { date?: DateData }) => {
+        if (!date) return <View />;
+        const d = new Date(date.dateString);
+        const key = formatDateKey(d);
+        const isSelected = key === formatDateKey(selectedDate);
+        const day = d.getDate();
+        const evts = monthEventsByDay.get(key) ?? [];
+        const uniqueCats = Array.from(new Set(evts.map((e) => e.category)));
+
+        const dots = uniqueCats.slice(0, 3).map((c) => (
+          <View key={c} style={[styles.monthDot, { backgroundColor: CATEGORY_COLORS[c] }]} />
+        ));
+        const overflow = uniqueCats.length > 3 ? uniqueCats.length - 3 : 0;
+
+        return (
+          <TouchableOpacity
+            style={[styles.monthCell, isSelected && styles.monthCellSelected]}
+            onPress={() => {
+              setSelectedDate(d);
+              setMode('day');
+            }}
+          >
+            <Text style={[styles.monthDay, isSelected && styles.monthDaySelected]}>
+              {day}
+            </Text>
+            <View style={styles.monthDotsRow}>
+              {dots}
+              {overflow > 0 ? (
+                <Text style={styles.monthOverflow}>•••</Text>
+              ) : null}
+            </View>
+          </TouchableOpacity>
+        );
+      }}
+      style={styles.monthCalendar}
+    />
+  );
+
+  const renderDay = () => (
+    <ScrollView
+      style={styles.timelineScroll}
+      contentContainerStyle={{ paddingBottom: 96 }}
+      onLayout={handleTimelineLayout}
+    >
+      <View style={[styles.timeline, { height: dayTimeline.contentHeight }]}>
+        {Array.from({ length: dayTimeline.endHour - dayTimeline.startHour }).map((_, i) => {
+          const hour = dayTimeline.startHour + i;
+          const top = i * dayTimeline.hourHeight;
+          const label = format(new Date(0, 0, 0, hour, 0), 'ha').toLowerCase();
+          const isNowHour =
+            dayTimeline.showNow &&
+            Math.floor((dayTimeline.nowY ?? 0) / dayTimeline.hourHeight) === i;
+
+          return (
+            <View key={hour} style={[styles.hourRow, { top, height: dayTimeline.hourHeight }]}>
+              <Text style={[styles.hourLabel, isNowHour && styles.hourLabelNow]}>
+                {label}
+              </Text>
+              <View style={styles.hourLine} />
+            </View>
+          );
+        })}
+
+        {dayTimeline.showNow ? (
+          <View style={[styles.nowLineWrap, { top: dayTimeline.nowY }]}>
+            <View style={styles.nowDot} />
+            <View style={styles.nowLine} />
+          </View>
+        ) : null}
+
+        {dayTimeline.blocks.map((b) => {
+          const color = CATEGORY_COLORS[b.evt.category];
+          return (
             <TouchableOpacity
-              key={evt.id}
-              style={styles.eventRow}
+              key={b.evt.id}
+              style={[
+                styles.block,
+                {
+                  top: b.top,
+                  left: b.left,
+                  height: b.height,
+                  width: b.width,
+                  borderLeftColor: color,
+                },
+              ]}
+              activeOpacity={0.9}
               onPress={() => {
-                setSelectedId(evt.id);
+                setSelectedId(b.evt.id);
                 setDetailVisible(true);
               }}
             >
-              <Text style={styles.eventTitle}>{evt.title}</Text>
-              <Text style={styles.eventMeta}>
-                {formatTimeRange(evt.start, evt.end)}
+              <Text style={styles.blockTitle} numberOfLines={1}>
+                {b.evt.title}
               </Text>
+              <Text style={styles.blockMeta}>{formatTimeRange(b.evt.start, b.evt.end)}</Text>
             </TouchableOpacity>
-          ))
-        )}
-      </ScrollView>
+          );
+        })}
+      </View>
+    </ScrollView>
+  );
+
+  const renderWeek = () => {
+    const start = startOfWeek(selectedDate, { weekStartsOn: 0 });
+    const days = Array.from({ length: 7 }).map((_, i) => addDays(start, i));
+    const dayKey = formatDateKey(selectedDate);
+    const selectedEvents = filteredEvents
+      .filter((e) => formatDateKey(e.start) === dayKey)
+      .sort((a, b) => a.start.getTime() - b.start.getTime());
+
+    return (
+      <View style={styles.weekWrap}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.weekStrip}>
+          {days.map((d) => {
+            const key = formatDateKey(d);
+            const active = key === dayKey;
+            const hasEvents = (monthEventsByDay.get(key) ?? []).length > 0;
+            return (
+              <TouchableOpacity
+                key={key}
+                style={[styles.weekDayPill, active && styles.weekDayPillActive]}
+                onPress={() => setSelectedDate(d)}
+              >
+                <Text style={[styles.weekDow, active && styles.weekDowActive]}>
+                  {format(d, 'EEE')}
+                </Text>
+                <Text style={[styles.weekDom, active && styles.weekDomActive]}>
+                  {format(d, 'd')}
+                </Text>
+                {hasEvents ? <View style={styles.weekDot} /> : null}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        <ScrollView style={styles.weekList} contentContainerStyle={{ paddingBottom: 96 }}>
+          {selectedEvents.length === 0 ? (
+            <Text style={styles.emptyText}>No events for this day.</Text>
+          ) : (
+            selectedEvents.map((evt) => (
+              <TouchableOpacity
+                key={evt.id}
+                style={styles.weekRow}
+                onPress={() => {
+                  setSelectedId(evt.id);
+                  setDetailVisible(true);
+                }}
+              >
+                <View style={[styles.weekRowStripe, { backgroundColor: CATEGORY_COLORS[evt.category] }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.weekRowTitle}>{evt.title}</Text>
+                  <Text style={styles.weekRowMeta}>{formatTimeRange(evt.start, evt.end)}</Text>
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  return (
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['#070A12', '#0A0E1A', '#0A0E1A', '#0B3A33']}
+        locations={[0, 0.25, 0.55, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+
+      <View style={styles.headerRow}>
+        <Text style={styles.heading}>Calendar</Text>
+        <TouchableOpacity style={styles.filterPill} onPress={() => setFilterVisible(true)}>
+          <Text style={styles.filterIcon}>⎇</Text>
+          <Text style={styles.filterPillText}>Filter</Text>
+        </TouchableOpacity>
+      </View>
+
+      {renderModeSwitcher()}
+      {renderDateNav()}
+
+      <View style={styles.content}>
+        {mode === 'month' ? renderMonth() : null}
+        {mode === 'day' ? renderDay() : null}
+        {mode === 'week' ? renderWeek() : null}
+      </View>
+
       <TouchableOpacity
         style={styles.fab}
         onPress={() => setQuickAddVisible(true)}
@@ -131,7 +496,7 @@ export const CalendarView: React.FC = () => {
       <FilterModal
         visible={filterVisible}
         selected={categories}
-        onToggle={handleToggleCategory}
+        onChange={handleCategoriesChange}
         onClose={() => setFilterVisible(false)}
       />
       <QuickAddModal
@@ -181,40 +546,295 @@ const styles = StyleSheet.create({
     fontWeight: typography.bold as any,
     color: colors.textPrimary,
   },
-  subtitle: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    color: colors.textSecondary,
-  },
-  filterText: {
-    color: colors.textSecondary,
-    fontSize: typography.body,
-  },
-  calendar: {
-    marginTop: spacing.md,
-    marginHorizontal: spacing.lg,
+  filterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
     borderRadius: borderRadius.large,
-    overflow: 'hidden',
+    backgroundColor: 'rgba(26,31,46,0.65)',
+    borderWidth: 1,
+    borderColor: 'rgba(45,53,72,0.9)',
   },
-  eventsContainer: {
-    flex: 1,
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.md,
-  },
-  eventRow: {
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  eventTitle: {
-    color: colors.textPrimary,
-    fontSize: typography.body,
-    fontWeight: typography.medium as any,
-  },
-  eventMeta: {
+  filterIcon: {
     color: colors.textSecondary,
     fontSize: typography.caption,
   },
+  filterPillText: {
+    color: colors.textSecondary,
+    fontSize: typography.caption,
+    fontWeight: typography.medium as any,
+  },
+
+  segWrap: {
+    marginTop: spacing.md,
+    marginHorizontal: spacing.lg,
+    flexDirection: 'row',
+    borderRadius: borderRadius.large,
+    backgroundColor: 'rgba(26,31,46,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(45,53,72,0.9)',
+    padding: 6,
+    gap: 6,
+  },
+  seg: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: borderRadius.medium,
+    alignItems: 'center',
+  },
+  segActive: {
+    backgroundColor: 'rgba(0,191,166,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,191,166,0.35)',
+  },
+  segText: {
+    color: colors.textSecondary,
+    fontWeight: typography.semibold as any,
+  },
+  segTextActive: {
+    color: colors.primary,
+  },
+
+  navRow: {
+    marginTop: spacing.md,
+    marginHorizontal: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  navBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: borderRadius.round,
+    backgroundColor: 'rgba(26,31,46,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(45,53,72,0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navIcon: {
+    color: colors.textSecondary,
+    fontSize: 18,
+    marginTop: -2,
+  },
+  navLabel: {
+    color: colors.textPrimary,
+    fontSize: typography.body,
+    fontWeight: typography.semibold as any,
+  },
+
+  content: {
+    flex: 1,
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+
+  monthCalendar: {
+    borderRadius: borderRadius.large,
+    overflow: 'hidden',
+  },
+  monthCell: {
+    width: 44,
+    height: 44,
+    borderRadius: borderRadius.medium,
+    backgroundColor: 'rgba(26,31,46,0.38)',
+    borderWidth: 1,
+    borderColor: 'rgba(45,53,72,0.75)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 5,
+  },
+  monthCellSelected: {
+    borderColor: 'rgba(0,191,166,0.8)',
+    backgroundColor: 'rgba(0,191,166,0.14)',
+  },
+  monthDay: {
+    color: colors.textPrimary,
+    fontSize: typography.caption,
+    fontWeight: typography.semibold as any,
+  },
+  monthDaySelected: {
+    color: colors.textPrimary,
+  },
+  monthDotsRow: {
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: 4,
+    alignItems: 'center',
+    height: 10,
+  },
+  monthDot: {
+    width: 5,
+    height: 5,
+    borderRadius: borderRadius.round,
+  },
+  monthOverflow: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    marginTop: -2,
+  },
+
+  timelineScroll: {
+    flex: 1,
+  },
+  timeline: {
+    position: 'relative',
+    borderRadius: borderRadius.large,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(26,31,46,0.28)',
+    borderWidth: 1,
+    borderColor: 'rgba(45,53,72,0.75)',
+  },
+  hourRow: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingTop: 10,
+  },
+  hourLabel: {
+    width: 56,
+    textAlign: 'left',
+    paddingLeft: 12,
+    color: 'rgba(176,184,201,0.35)',
+    fontSize: typography.tiny,
+    fontWeight: typography.semibold as any,
+  },
+  hourLabelNow: {
+    color: colors.primary,
+  },
+  hourLine: {
+    flex: 1,
+    height: 1,
+    marginTop: 8,
+    backgroundColor: 'rgba(45,53,72,0.35)',
+  },
+  nowLineWrap: {
+    position: 'absolute',
+    left: 56,
+    right: 0,
+    height: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  nowDot: {
+    width: 6,
+    height: 6,
+    borderRadius: borderRadius.round,
+    backgroundColor: colors.primary,
+    marginRight: 8,
+  },
+  nowLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(0,191,166,0.65)',
+  },
+  block: {
+    position: 'absolute',
+    borderRadius: borderRadius.large,
+    backgroundColor: 'rgba(26,31,46,0.65)',
+    borderWidth: 1,
+    borderColor: 'rgba(45,53,72,0.85)',
+    borderLeftWidth: 4,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    justifyContent: 'center',
+  },
+  blockTitle: {
+    color: colors.textPrimary,
+    fontSize: typography.body,
+    fontWeight: typography.semibold as any,
+  },
+  blockMeta: {
+    marginTop: 2,
+    color: colors.textSecondary,
+    fontSize: typography.tiny,
+  },
+
+  weekWrap: {
+    flex: 1,
+  },
+  weekStrip: {
+    maxHeight: 76,
+    marginBottom: spacing.md,
+  },
+  weekDayPill: {
+    width: 72,
+    paddingVertical: spacing.sm,
+    marginRight: spacing.sm,
+    borderRadius: borderRadius.large,
+    backgroundColor: 'rgba(26,31,46,0.38)',
+    borderWidth: 1,
+    borderColor: 'rgba(45,53,72,0.75)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekDayPillActive: {
+    borderColor: 'rgba(0,191,166,0.8)',
+    backgroundColor: 'rgba(0,191,166,0.14)',
+  },
+  weekDow: {
+    color: colors.textSecondary,
+    fontSize: typography.tiny,
+    fontWeight: typography.semibold as any,
+  },
+  weekDowActive: {
+    color: colors.primary,
+  },
+  weekDom: {
+    marginTop: 4,
+    color: colors.textPrimary,
+    fontSize: typography.body,
+    fontWeight: typography.bold as any,
+  },
+  weekDomActive: {
+    color: colors.textPrimary,
+  },
+  weekDot: {
+    marginTop: 6,
+    width: 5,
+    height: 5,
+    borderRadius: borderRadius.round,
+    backgroundColor: colors.primary,
+  },
+  weekList: {
+    flex: 1,
+  },
+  emptyText: {
+    color: colors.textSecondary,
+    paddingVertical: spacing.md,
+  },
+  weekRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.large,
+    backgroundColor: 'rgba(26,31,46,0.38)',
+    borderWidth: 1,
+    borderColor: 'rgba(45,53,72,0.75)',
+    marginBottom: spacing.sm,
+    gap: spacing.md,
+  },
+  weekRowStripe: {
+    width: 4,
+    height: 36,
+    borderRadius: borderRadius.round,
+  },
+  weekRowTitle: {
+    color: colors.textPrimary,
+    fontSize: typography.body,
+    fontWeight: typography.semibold as any,
+  },
+  weekRowMeta: {
+    marginTop: 2,
+    color: colors.textSecondary,
+    fontSize: typography.tiny,
+  },
+
   fab: {
     position: 'absolute',
     right: spacing.lg,
@@ -222,7 +842,9 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: borderRadius.round,
-    backgroundColor: colors.primary,
+    backgroundColor: 'rgba(26,31,46,0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,191,166,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
   },
