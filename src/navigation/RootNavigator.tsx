@@ -1,13 +1,14 @@
 import React from 'react';
 import { AuthStackNavigator } from './AuthStack';
 import { MainTabsNavigator } from './MainTabs';
+import OnboardingStack from './OnboardingStack';
 import { useAuth } from '../context/AuthContext';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { View, StyleSheet } from 'react-native';
 import { colors } from '../theme';
 
 export const RootNavigator = () => {
-  const { token, loading } = useAuth();
+  const { token, onboardingCompleted, loading } = useAuth();
 
   if (loading) {
     return (
@@ -21,6 +22,10 @@ export const RootNavigator = () => {
     return <AuthStackNavigator />;
   }
 
+  if (!onboardingCompleted) {
+    return <OnboardingStack />;
+  }
+
   return <MainTabsNavigator />;
 };
 
@@ -32,4 +37,3 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 });
-

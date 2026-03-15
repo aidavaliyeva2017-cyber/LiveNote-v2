@@ -17,9 +17,9 @@ import { formatTimeRange } from '../../utils/dateUtils';
 import { FilterModal } from '../../components/modals/FilterModal';
 import { QuickAddModal, ParsedEventDraft } from '../../components/modals/QuickAddModal';
 import { EventConfirmationModal } from '../../components/modals/EventConfirmationModal';
-import { EventDetailModal } from '../../components/modals/EventDetailModal';
+import { NewTaskModal } from '../../components/modals/NewTaskModal';
 
-const formatDateKey = (date: Date) => date.toISOString().slice(0, 10);
+const formatDateKey = (date: Date) => format(date, 'yyyy-MM-dd');
 
 type CalendarMode = 'day' | 'week' | 'month';
 
@@ -32,8 +32,14 @@ const CATEGORY_COLORS: Record<EventCategory, string> = {
   hobbies: colors.categoryHobbies,
 };
 
+const PRIORITY_BORDER: Record<string, string> = {
+  high:   colors.error,
+  medium: colors.warning,
+  low:    colors.textTertiary,
+};
+
 export const CalendarView: React.FC = () => {
-  const { events, addEvent, updateEvent, deleteEvent } = useEvents();
+  const { events, addEvent, updateEvent, deleteEvent, toggleComplete } = useEvents();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [mode, setMode] = useState<CalendarMode>('day');
   const [filterVisible, setFilterVisible] = useState(false);
@@ -47,8 +53,11 @@ export const CalendarView: React.FC = () => {
   ]);
   const [quickAddVisible, setQuickAddVisible] = useState(false);
   const [confirmationDraft, setConfirmationDraft] = useState<ParsedEventDraft | null>(null);
-  const [detailVisible, setDetailVisible] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Single modal state for both create (event=null) and edit (event=CalendarEvent)
+  const [taskModal, setTaskModal] = useState<{ visible: boolean; event: CalendarEvent | null }>({
+    visible: false,
+    event: null,
+  });
   const [timelineWidth, setTimelineWidth] = useState(0);
 
   const filteredEvents = events.filter((evt) => categories.includes(evt.category));
@@ -74,7 +83,6 @@ export const CalendarView: React.FC = () => {
     (evt) => formatDateKey(evt.start) === formatDateKey(selectedDate),
   );
 
-  const selectedEvent = dayEvents.find((e) => e.id === selectedId) ?? null;
 
   const handleDayPress = (day: DateData) => {
     setSelectedDate(new Date(day.dateString));
@@ -91,6 +99,10 @@ export const CalendarView: React.FC = () => {
     addEvent(base);
     setConfirmationDraft(null);
   };
+
+  const isViewingToday = formatDateKey(selectedDate) === formatDateKey(new Date());
+
+  const goToday = () => setSelectedDate(new Date());
 
   const headerRangeLabel = useMemo(() => {
     if (mode === 'month') return format(selectedDate, 'MMMM yyyy');
@@ -270,7 +282,11 @@ export const CalendarView: React.FC = () => {
       <TouchableOpacity style={styles.navBtn} onPress={goPrev} accessibilityRole="button">
         <Text style={styles.navIcon}>‹</Text>
       </TouchableOpacity>
-      <Text style={styles.navLabel}>{headerRangeLabel}</Text>
+      <TouchableOpacity onPress={goToday} disabled={isViewingToday}>
+        <Text style={[styles.navLabel, isViewingToday && styles.navLabelToday]}>
+          {headerRangeLabel}
+        </Text>
+      </TouchableOpacity>
       <TouchableOpacity style={styles.navBtn} onPress={goNext} accessibilityRole="button">
         <Text style={styles.navIcon}>›</Text>
       </TouchableOpacity>
@@ -343,6 +359,13 @@ export const CalendarView: React.FC = () => {
       contentContainerStyle={{ paddingBottom: 96 }}
       onLayout={handleTimelineLayout}
     >
+      {dayEvents.length === 0 && (
+        <View style={styles.emptyDay}>
+          <Text style={styles.emptyDayIcon}>📅</Text>
+          <Text style={styles.emptyDayTitle}>No events</Text>
+          <Text style={styles.emptyDaySubtitle}>Tap + to add something</Text>
+        </View>
+      )}
       <View style={[styles.timeline, { height: dayTimeline.contentHeight }]}>
         {Array.from({ length: dayTimeline.endHour - dayTimeline.startHour }).map((_, i) => {
           const hour = dayTimeline.startHour + i;
@@ -370,7 +393,9 @@ export const CalendarView: React.FC = () => {
         ) : null}
 
         {dayTimeline.blocks.map((b) => {
-          const color = CATEGORY_COLORS[b.evt.category];
+          const catColor = CATEGORY_COLORS[b.evt.category];
+          const isCompleted = !!b.evt.completed;
+          const showPriorityDot = !isCompleted && b.evt.priority === 'high';
           return (
             <TouchableOpacity
               key={b.evt.id}
@@ -381,19 +406,26 @@ export const CalendarView: React.FC = () => {
                   left: b.left,
                   height: b.height,
                   width: b.width,
-                  borderLeftColor: color,
+                  borderLeftColor: catColor,
                 },
+                isCompleted && styles.blockCompleted,
               ]}
-              activeOpacity={0.9}
-              onPress={() => {
-                setSelectedId(b.evt.id);
-                setDetailVisible(true);
-              }}
+              activeOpacity={0.85}
+              onPress={() => setTaskModal({ visible: true, event: b.evt })}
+              onLongPress={() => toggleComplete(b.evt.id)}
             >
-              <Text style={styles.blockTitle} numberOfLines={1}>
-                {b.evt.title}
-              </Text>
-              <Text style={styles.blockMeta}>{formatTimeRange(b.evt.start, b.evt.end)}</Text>
+              <View style={styles.blockInner}>
+                <Text
+                  style={[styles.blockTitle, isCompleted && styles.blockTitleCompleted]}
+                  numberOfLines={1}
+                >
+                  {isCompleted ? '✓ ' : ''}{b.evt.title}
+                </Text>
+                {b.height > 36 && (
+                  <Text style={styles.blockMeta}>{formatTimeRange(b.evt.start, b.evt.end)}</Text>
+                )}
+              </View>
+              {showPriorityDot && <View style={styles.blockPriorityDot} />}
             </TouchableOpacity>
           );
         })}
@@ -436,24 +468,41 @@ export const CalendarView: React.FC = () => {
 
         <ScrollView style={styles.weekList} contentContainerStyle={{ paddingBottom: 96 }}>
           {selectedEvents.length === 0 ? (
-            <Text style={styles.emptyText}>No events for this day.</Text>
+            <View style={styles.emptyDay}>
+              <Text style={styles.emptyDayIcon}>📅</Text>
+              <Text style={styles.emptyDayTitle}>No events</Text>
+              <Text style={styles.emptyDaySubtitle}>Tap + to add something</Text>
+            </View>
           ) : (
-            selectedEvents.map((evt) => (
-              <TouchableOpacity
-                key={evt.id}
-                style={styles.weekRow}
-                onPress={() => {
-                  setSelectedId(evt.id);
-                  setDetailVisible(true);
-                }}
-              >
-                <View style={[styles.weekRowStripe, { backgroundColor: CATEGORY_COLORS[evt.category] }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.weekRowTitle}>{evt.title}</Text>
-                  <Text style={styles.weekRowMeta}>{formatTimeRange(evt.start, evt.end)}</Text>
-                </View>
-              </TouchableOpacity>
-            ))
+            selectedEvents.map((evt) => {
+              const isCompleted = !!evt.completed;
+              return (
+                <TouchableOpacity
+                  key={evt.id}
+                  style={[styles.weekRow, isCompleted && styles.weekRowCompleted]}
+                  onPress={() => setTaskModal({ visible: true, event: evt })}
+                  onLongPress={() => toggleComplete(evt.id)}
+                >
+                  <View style={[styles.weekRowStripe, { backgroundColor: CATEGORY_COLORS[evt.category] }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.weekRowTitle, isCompleted && styles.weekRowTitleCompleted]}>
+                      {isCompleted ? '✓  ' : ''}{evt.title}
+                    </Text>
+                    <Text style={styles.weekRowMeta}>{formatTimeRange(evt.start, evt.end)}</Text>
+                  </View>
+                  {evt.priority === 'high' && !isCompleted && (
+                    <View style={styles.weekPriorityDot} />
+                  )}
+                  <TouchableOpacity
+                    style={[styles.weekCheckbox, isCompleted && styles.weekCheckboxDone]}
+                    onPress={() => toggleComplete(evt.id)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    {isCompleted && <View style={styles.weekCheckmark} />}
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              );
+            })
           )}
         </ScrollView>
       </View>
@@ -485,9 +534,14 @@ export const CalendarView: React.FC = () => {
         {mode === 'week' ? renderWeek() : null}
       </View>
 
+      {!isViewingToday && (
+        <TouchableOpacity style={styles.todayPill} onPress={goToday}>
+          <Text style={styles.todayPillText}>Today</Text>
+        </TouchableOpacity>
+      )}
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => setQuickAddVisible(true)}
+        onPress={() => setTaskModal({ visible: true, event: null })}
         accessibilityRole="button"
         accessibilityLabel="Add new event"
       >
@@ -518,12 +572,16 @@ export const CalendarView: React.FC = () => {
         onCancel={() => setConfirmationDraft(null)}
         onConfirm={handleConfirm}
       />
-      <EventDetailModal
-        visible={detailVisible}
-        event={selectedEvent}
-        onClose={() => setDetailVisible(false)}
+      <NewTaskModal
+        visible={taskModal.visible}
+        onClose={() => setTaskModal({ visible: false, event: null })}
+        defaultDate={selectedDate}
+        event={taskModal.event}
         onSave={updateEvent}
-        onDelete={deleteEvent}
+        onDelete={(id) => {
+          deleteEvent(id);
+          setTaskModal({ visible: false, event: null });
+        }}
       />
     </View>
   );
@@ -841,16 +899,120 @@ const styles = StyleSheet.create({
     bottom: spacing.xl,
     width: 56,
     height: 56,
-    borderRadius: borderRadius.round,
-    backgroundColor: 'rgba(26,31,46,0.6)',
+    borderRadius: 28,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  fabIcon: {
+    color: '#fff',
+    fontSize: 28,
+    lineHeight: 32,
+  },
+
+  // Today pill
+  todayPill: {
+    position: 'absolute',
+    bottom: spacing.xl + 64,
+    alignSelf: 'center',
+    left: '50%',
+    marginLeft: -32,
+    backgroundColor: colors.surfaceVariant,
     borderWidth: 1,
-    borderColor: 'rgba(0,191,166,0.35)',
+    borderColor: colors.primary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: borderRadius.large,
+  },
+  todayPillText: {
+    color: colors.primary,
+    fontSize: typography.caption,
+    fontWeight: typography.semibold,
+  },
+
+  // navLabel today highlight
+  navLabelToday: {
+    color: colors.primary,
+  },
+
+  // Empty day state
+  emptyDay: {
+    alignItems: 'center',
+    paddingVertical: spacing.xxl,
+    gap: spacing.sm,
+  },
+  emptyDayIcon: { fontSize: 36 },
+  emptyDayTitle: {
+    fontSize: typography.h3,
+    fontWeight: typography.semibold,
+    color: colors.textSecondary,
+  },
+  emptyDaySubtitle: {
+    fontSize: typography.caption,
+    color: colors.textTertiary,
+  },
+
+  // Block completion state
+  blockCompleted: {
+    opacity: 0.45,
+    borderLeftColor: colors.textTertiary,
+  },
+  blockInner: {
+    flex: 1,
+  },
+  blockTitleCompleted: {
+    textDecorationLine: 'line-through',
+    color: colors.textSecondary,
+  },
+  blockPriorityDot: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.error,
+  },
+
+  // Week row completion state
+  weekRowCompleted: {
+    opacity: 0.5,
+  },
+  weekRowTitleCompleted: {
+    textDecorationLine: 'line-through',
+    color: colors.textSecondary,
+  },
+  weekPriorityDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.error,
+    alignSelf: 'center',
+    marginRight: spacing.sm,
+  },
+  weekCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  fabIcon: {
-    color: colors.textPrimary,
-    fontSize: 28,
+  weekCheckboxDone: {
+    borderColor: colors.success,
+    backgroundColor: colors.success + '20',
+  },
+  weekCheckmark: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.success,
   },
 });
 
