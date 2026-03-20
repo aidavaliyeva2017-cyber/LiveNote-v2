@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { format, addDays, startOfDay } from 'date-fns';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius } from '../../theme';
 import { CalendarEvent, EventCategory, EventPriority } from '../../types/event';
 import { useEvents } from '../../context/EventsContext';
@@ -306,7 +307,7 @@ export const NewTaskModal: React.FC<Props> = ({
               }}
               activeOpacity={0.7}
             >
-              <Text style={styles.fieldIcon}>📆</Text>
+              <Ionicons name="calendar-outline" size={18} color={colors.textSecondary} />
               <Text style={styles.fieldLabel}>Date</Text>
               <Text style={styles.fieldValue}>{formatDateFieldLabel(selectedDate)}</Text>
             </TouchableOpacity>
@@ -343,7 +344,7 @@ export const NewTaskModal: React.FC<Props> = ({
               onPress={() => openPicker('start')}
               activeOpacity={0.7}
             >
-              <Text style={styles.fieldIcon}>🕐</Text>
+              <Ionicons name="time-outline" size={18} color={colors.textSecondary} />
               <Text style={styles.fieldLabel}>Start</Text>
               <Text style={[styles.fieldValue, pickerMode === 'start' && styles.fieldValueActive]}>
                 {format(startDate, 'h:mm a')}
@@ -358,7 +359,7 @@ export const NewTaskModal: React.FC<Props> = ({
               onPress={() => openPicker('end')}
               activeOpacity={0.7}
             >
-              <Text style={styles.fieldIcon}>🏁</Text>
+              <Ionicons name="flag-outline" size={18} color={colors.textSecondary} />
               <Text style={styles.fieldLabel}>End</Text>
               <Text style={[styles.fieldValue, pickerMode === 'end' && styles.fieldValueActive]}>
                 {format(endDate, 'h:mm a')}
@@ -373,7 +374,7 @@ export const NewTaskModal: React.FC<Props> = ({
               onPress={() => openPicker('duration')}
               activeOpacity={0.7}
             >
-              <Text style={styles.fieldIcon}>⏰</Text>
+              <Ionicons name="alarm-outline" size={18} color={colors.textSecondary} />
               <Text style={styles.fieldLabel}>Duration</Text>
               <Text style={[styles.fieldValue, pickerMode === 'duration' && styles.fieldValueActive]}>
                 {formatDuration(startDate, endDate)}
@@ -458,7 +459,7 @@ export const NewTaskModal: React.FC<Props> = ({
             {/* ── Bottom row ── */}
             <View style={styles.bottomRow}>
               <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} activeOpacity={0.8}>
-                <Text style={styles.deleteBtnIcon}>🗑</Text>
+                <Ionicons name="trash-outline" size={20} color={colors.error} />
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
@@ -569,11 +570,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.md,
     gap: spacing.md,
-  },
-  fieldIcon: {
-    fontSize: 18,
-    width: 24,
-    textAlign: 'center',
   },
   fieldLabel: {
     flex: 1,
@@ -750,7 +746,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  deleteBtnIcon: { fontSize: 18 },
   saveBtn: {
     flex: 1,
     height: 50,

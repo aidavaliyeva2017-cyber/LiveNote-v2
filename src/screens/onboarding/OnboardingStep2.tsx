@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as SecureStore from 'expo-secure-store';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { OnboardingStackParamList } from '../../types/navigation';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius } from '../../theme';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'OnboardingStep2'>;
@@ -67,7 +68,7 @@ export const OnboardingStep2: React.FC<Props> = ({ navigation }) => {
       </View>
 
       <View style={styles.content}>
-        <Text style={styles.emoji}>👋</Text>
+        <Ionicons name="hand-right-outline" size={48} color={colors.primary} style={styles.emojiGap} />
         <Text style={styles.title}>Wie heißt du?</Text>
         <Text style={styles.subtitle}>
           LiveNote personalisiert dein Erlebnis mit deinem Namen.
@@ -98,7 +99,7 @@ export const OnboardingStep2: React.FC<Props> = ({ navigation }) => {
         </Animated.View>
 
         {name.trim().length > 0 && (
-          <Text style={styles.preview}>Hallo, {name.trim()}! 👋</Text>
+          <Text style={styles.preview}>Hallo, {name.trim()}!</Text>
         )}
       </View>
 
@@ -127,7 +128,7 @@ export const OnboardingStep2: React.FC<Props> = ({ navigation }) => {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: 'transparent',
   },
 
   dotsRow: {
@@ -154,8 +155,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xxl,
   },
 
-  emoji: {
-    fontSize: 48,
+  emojiGap: {
     marginBottom: spacing.md,
   },
   title: {

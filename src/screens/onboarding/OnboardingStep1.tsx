@@ -10,23 +10,24 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { OnboardingStackParamList } from '../../types/navigation';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius } from '../../theme';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'OnboardingStep1'>;
 
-const FEATURES = [
+const FEATURES: { iconName: keyof typeof Ionicons.glyphMap; title: string; desc: string }[] = [
   {
-    icon: '🤖',
+    iconName: 'hardware-chip-outline',
     title: 'KI-Assistent',
     desc: 'Plane deinen Tag einfach per Chat',
   },
   {
-    icon: '⚡',
+    iconName: 'flash-outline',
     title: 'XP & Levels',
     desc: 'Werde produktiver mit Gamification',
   },
   {
-    icon: '🔔',
+    iconName: 'notifications-outline',
     title: 'Smarte Erinnerungen',
     desc: 'Verpasse nie wieder einen Termin',
   },
@@ -93,7 +94,7 @@ export const OnboardingStep1: React.FC<Props> = ({ navigation }) => {
             colors={[colors.primary + '33', colors.primary + '11']}
             style={styles.logoGradient}
           >
-            <Text style={styles.logoIcon}>✨</Text>
+            <Ionicons name="sparkles" size={44} color={colors.primary} />
           </LinearGradient>
         </Animated.View>
 
@@ -104,7 +105,7 @@ export const OnboardingStep1: React.FC<Props> = ({ navigation }) => {
         <View style={styles.features}>
           {FEATURES.map((f, i) => (
             <Animated.View
-              key={f.icon}
+              key={String(f.iconName)}
               style={[
                 styles.featureRow,
                 {
@@ -121,7 +122,7 @@ export const OnboardingStep1: React.FC<Props> = ({ navigation }) => {
               ]}
             >
               <View style={styles.featureIconWrap}>
-                <Text style={styles.featureIcon}>{f.icon}</Text>
+                <Ionicons name={f.iconName} size={22} color={colors.primary} />
               </View>
               <View style={styles.featureText}>
                 <Text style={styles.featureTitle}>{f.title}</Text>
@@ -155,7 +156,7 @@ export const OnboardingStep1: React.FC<Props> = ({ navigation }) => {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: 'transparent',
   },
 
   dotsRow: {
@@ -195,9 +196,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logoIcon: {
-    fontSize: 44,
-  },
 
   appName: {
     fontSize: 36,
@@ -235,7 +233,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  featureIcon: { fontSize: 22 },
   featureText: { flex: 1 },
   featureTitle: {
     fontSize: typography.body,

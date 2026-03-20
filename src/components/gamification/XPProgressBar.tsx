@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, Animated, StyleSheet } from 'react-native';
-import { colors, spacing, typography } from '../../theme';
+import { spacing, typography } from '../../theme';
+import { useColors } from '../../context/ThemeContext';
 
 interface Props {
   xpTotal: number;
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function XPProgressBar({ xpTotal, level, progress, xpToNext }: Props) {
+  const c = useColors();
   const animatedWidth = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -29,43 +31,36 @@ export function XPProgressBar({ xpTotal, level, progress, xpToNext }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.labelRow}>
-        <Text style={styles.xpText}>{xpTotal} XP</Text>
-        <Text style={styles.nextText}>{xpToNext} XP bis Level {level + 1}</Text>
+        <Text style={[styles.xpText, { color: c.accentYellow }]}>{xpTotal} XP</Text>
+        <Text style={[styles.nextText, { color: c.textTertiary }]}>
+          {xpToNext} XP to Level {level + 1}
+        </Text>
       </View>
-      <View style={styles.track}>
-        <Animated.View style={[styles.fill, { width: widthPercent }]} />
+      <View style={[styles.track, { backgroundColor: c.surfaceVariant }]}>
+        <Animated.View
+          style={[styles.fill, { width: widthPercent, backgroundColor: c.accentYellow }]}
+        />
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    marginBottom: spacing.md,
-  },
+  container: { marginBottom: spacing.md },
   labelRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: spacing.xs,
   },
-  xpText: {
-    fontSize: typography.tiny,
-    color: colors.accentYellow,
-    fontWeight: typography.semibold,
-  },
-  nextText: {
-    fontSize: typography.tiny,
-    color: colors.textTertiary,
-  },
+  xpText:  { fontSize: typography.tiny, fontWeight: typography.semibold },
+  nextText: { fontSize: typography.tiny },
   track: {
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.surfaceVariant,
     overflow: 'hidden',
   },
   fill: {
     height: '100%',
     borderRadius: 3,
-    backgroundColor: colors.accentYellow,
   },
 });

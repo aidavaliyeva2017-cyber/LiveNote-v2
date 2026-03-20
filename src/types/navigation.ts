@@ -19,8 +19,8 @@ export type MainTabsParamList = {
 };
 
 export type ProfileStackParamList = {
-  ProfileDashboard: undefined;
+  ProfileMain: undefined;
   Settings: undefined;
-  Stats: undefined;
   About: undefined;
+  ChangeTheme: undefined;
 };

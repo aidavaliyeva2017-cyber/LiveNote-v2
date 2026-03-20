@@ -11,7 +11,9 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius } from '../../theme';
+import { useColors } from '../../context/ThemeContext';
 import { Card } from '../../components/common/Card';
 import { TaskRow } from '../../components/tasks/TaskRow';
 import { XPProgressBar } from '../../components/gamification/XPProgressBar';
@@ -31,15 +33,17 @@ function computeLevel(xp: number) { return Math.floor(xp / 10) + 1; }
 function xpProgress(xp: number) { return (xp % 10) / 10; }
 function xpToNext(xp: number) { return 10 - (xp % 10); }
 
-// ─── Priority label map ───────────────────────────────────────────────────────
+// ─── Priority helpers ─────────────────────────────────────────────────────────
 const PRIORITY_LABEL: Record<string, string> = {
-  high: '🔴 High',
-  medium: '🟡 Medium',
-  low: '⚪ Low',
+  high: 'High', medium: 'Medium', low: 'Low',
+};
+const PRIORITY_COLOR: Record<string, string> = {
+  high: colors.error, medium: colors.warning, low: colors.textTertiary,
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export const TodayDashboard: React.FC = () => {
+  const c = useColors();
   const { isLargeScreen } = useLayout();
   const { events, updateEvent, deleteEvent, toggleComplete } = useEvents();
 
@@ -165,10 +169,13 @@ export const TodayDashboard: React.FC = () => {
       {/* ── Level-up toast ── */}
       {levelUpVisible && (
         <Animated.View
-          style={[styles.levelUpToast, { opacity: levelUpAnim, transform: [{ scale: levelUpAnim }] }]}
+          style={[styles.levelUpToast, { opacity: levelUpAnim, transform: [{ scale: levelUpAnim }], backgroundColor: c.accentYellow }]}
           pointerEvents="none"
         >
-          <Text style={styles.levelUpText}>🎉 Level {level}!</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="gift" size={22} color="#000" />
+            <Text style={styles.levelUpText}>Level {level}!</Text>
+          </View>
         </Animated.View>
       )}
 
@@ -183,9 +190,9 @@ export const TodayDashboard: React.FC = () => {
             <Text style={styles.dateText}>{formatDateLabel(today)}</Text>
             <Text style={styles.greetingText}>{getGreeting(today)}</Text>
           </View>
-          <View style={styles.levelBadge}>
-            <Text style={styles.levelEmoji}>⚡</Text>
-            <Text style={styles.levelText}>LVL {level}</Text>
+          <View style={[styles.levelBadge, { backgroundColor: c.surfaceVariant }]}>
+            <Ionicons name="flash" size={14} color={c.accentYellow} />
+            <Text style={[styles.levelText, { color: c.accentYellow }]}>LVL {level}</Text>
           </View>
         </View>
 
@@ -204,10 +211,10 @@ export const TodayDashboard: React.FC = () => {
           style={styles.whatsOnButton}
         >
           <View style={styles.whatsOnRow}>
-            <Text style={styles.whatsOnIcon}>✨</Text>
+            <Ionicons name="sparkles" size={16} color={c.primary} />
             <Text style={styles.whatsOnLabel}>What's On Today?</Text>
             {aiLoading
-              ? <ActivityIndicator size="small" color={colors.primary} />
+              ? <ActivityIndicator size="small" color={c.primary} />
               : <Text style={styles.whatsOnChevron}>{summaryExpanded ? '▲' : '▼'}</Text>
             }
           </View>
@@ -218,17 +225,20 @@ export const TodayDashboard: React.FC = () => {
 
         {/* ── Next Up Card ── */}
         {nextUp && (
-          <View style={styles.nextUpCard}>
+          <View style={[styles.nextUpCard, { backgroundColor: c.primary + '18', borderLeftColor: c.primary }]}>
             <View style={styles.nextUpHeader}>
-              <Text style={styles.nextUpLabel}>NEXT UP</Text>
-              <Text style={styles.nextUpCountdown}>
+              <Text style={[styles.nextUpLabel, { color: c.primary }]}>NEXT UP</Text>
+              <Text style={[styles.nextUpCountdown, { color: c.primary }]}>
                 {formatCountdown(nextUp.start, now)}
               </Text>
             </View>
             <Text style={styles.nextUpTitle}>{nextUp.title}</Text>
             <View style={styles.nextUpMeta}>
               <Text style={styles.nextUpTime}>{formatTimeRange(nextUp.start, nextUp.end)}</Text>
-              <Text style={styles.nextUpPriority}>{PRIORITY_LABEL[nextUp.priority]}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Ionicons name="ellipse" size={8} color={PRIORITY_COLOR[nextUp.priority]} />
+                <Text style={styles.nextUpPriority}>{PRIORITY_LABEL[nextUp.priority]}</Text>
+              </View>
             </View>
           </View>
         )}
@@ -236,7 +246,10 @@ export const TodayDashboard: React.FC = () => {
         {/* ── Overdue items ── */}
         {overdue.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>⚠️ Overdue</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="warning" size={14} color={c.warning} />
+              <Text style={[styles.sectionLabel, { color: c.warning }]}>Overdue</Text>
+            </View>
             {overdue.map((e) => (
               <TaskRow key={e.id} event={e} onToggle={handleToggle} onPress={handleOpenDetail} />
             ))}
@@ -284,8 +297,11 @@ export const TodayDashboard: React.FC = () => {
 
         {/* ── Streak ── */}
         {streak >= 3 && (
-          <View style={styles.streakCard}>
-            <Text style={styles.streakTitle}>🔥 {streak}-Day Streak!</Text>
+          <View style={[styles.streakCard, { backgroundColor: c.accentYellow + '18', borderLeftColor: c.accentYellow }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="flame" size={18} color={c.accentYellow} />
+              <Text style={[styles.streakTitle, { color: c.accentYellow }]}>{streak}-Day Streak!</Text>
+            </View>
             <Text style={styles.streakSub}>Keep going – complete today's tasks to maintain it.</Text>
           </View>
         )}
@@ -296,11 +312,11 @@ export const TodayDashboard: React.FC = () => {
 
       {/* ── FAB ── */}
       <TouchableOpacity
-        style={styles.fab}
+        style={[styles.fab, { backgroundColor: c.primary, shadowColor: c.primary }]}
         onPress={() => setTaskModal({ visible: true, event: null })}
         accessibilityLabel="Add new task"
       >
-        <Text style={styles.fabIcon}>＋</Text>
+        <Ionicons name="add" size={28} color="#fff" />
       </TouchableOpacity>
 
       {/* ── Modal (create + edit) ── */}
@@ -323,7 +339,7 @@ export const TodayDashboard: React.FC = () => {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: 'transparent',
   },
   content: {
     paddingHorizontal: spacing.lg,
@@ -366,7 +382,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.large,
   },
-  levelEmoji: { fontSize: 14 },
   levelText: {
     fontSize: typography.caption,
     fontWeight: typography.bold,
@@ -387,7 +402,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  whatsOnIcon: { fontSize: 16 },
   whatsOnLabel: {
     flex: 1,
     fontSize: typography.body,
@@ -533,11 +547,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 8,
     elevation: 6,
-  },
-  fabIcon: {
-    color: '#fff',
-    fontSize: 28,
-    lineHeight: 32,
   },
 
   // Level-up toast

@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as SecureStore from 'expo-secure-store';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { OnboardingStackParamList } from '../../types/navigation';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius } from '../../theme';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'OnboardingStep3'>;
@@ -17,13 +18,13 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'OnboardingStep3'>
 const WAKE_OPTIONS = ['5:00', '6:00', '7:00', '8:00', '9:00', '10:00'];
 const SLEEP_OPTIONS = ['21:00', '22:00', '23:00', '0:00', '1:00', '2:00'];
 
-const GOAL_OPTIONS = [
-  { icon: '🎓', label: 'Studium', value: 'study' },
-  { icon: '💼', label: 'Arbeit', value: 'work' },
-  { icon: '🏃', label: 'Fitness', value: 'fitness' },
-  { icon: '🎯', label: 'Persönlich', value: 'personal' },
-  { icon: '📚', label: 'Weiterbildung', value: 'learning' },
-  { icon: '👨‍👩‍👧', label: 'Familie', value: 'family' },
+const GOAL_OPTIONS: { iconName: keyof typeof Ionicons.glyphMap; label: string; value: string }[] = [
+  { iconName: 'school-outline',    label: 'Studium',       value: 'study' },
+  { iconName: 'briefcase-outline', label: 'Arbeit',        value: 'work' },
+  { iconName: 'bicycle-outline',   label: 'Fitness',       value: 'fitness' },
+  { iconName: 'locate-outline',    label: 'Persönlich',    value: 'personal' },
+  { iconName: 'book-outline',      label: 'Weiterbildung', value: 'learning' },
+  { iconName: 'people-outline',    label: 'Familie',       value: 'family' },
 ];
 
 const WAKE_KEY = 'livenote_wake_time';
@@ -69,7 +70,7 @@ export const OnboardingStep3: React.FC<Props> = ({ navigation }) => {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.emoji}>🌅</Text>
+        <Ionicons name="sunny-outline" size={48} color={colors.primary} style={styles.emojiGap} />
         <Text style={styles.title}>Dein Tagesrhythmus</Text>
         <Text style={styles.subtitle}>
           LiveNote plant um deine aktiven Stunden herum.
@@ -77,7 +78,10 @@ export const OnboardingStep3: React.FC<Props> = ({ navigation }) => {
 
         {/* Wake time */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>⏰ Wann stehst du auf?</Text>
+          <View style={styles.sectionLabelRow}>
+            <Ionicons name="alarm-outline" size={14} color={colors.textSecondary} />
+            <Text style={styles.sectionLabel}>Wann stehst du auf?</Text>
+          </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.optionsRow}>
             {WAKE_OPTIONS.map((t) => (
               <TouchableOpacity
@@ -96,7 +100,10 @@ export const OnboardingStep3: React.FC<Props> = ({ navigation }) => {
 
         {/* Sleep time */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>🌙 Wann gehst du schlafen?</Text>
+          <View style={styles.sectionLabelRow}>
+            <Ionicons name="moon-outline" size={14} color={colors.textSecondary} />
+            <Text style={styles.sectionLabel}>Wann gehst du schlafen?</Text>
+          </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.optionsRow}>
             {SLEEP_OPTIONS.map((t) => (
               <TouchableOpacity
@@ -115,7 +122,10 @@ export const OnboardingStep3: React.FC<Props> = ({ navigation }) => {
 
         {/* Goals */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>🎯 Deine Hauptziele (optional)</Text>
+          <View style={styles.sectionLabelRow}>
+            <Ionicons name="locate-outline" size={14} color={colors.textSecondary} />
+            <Text style={styles.sectionLabel}>Deine Hauptziele (optional)</Text>
+          </View>
           <View style={styles.goalsGrid}>
             {GOAL_OPTIONS.map((g) => {
               const active = selectedGoals.includes(g.value);
@@ -126,7 +136,7 @@ export const OnboardingStep3: React.FC<Props> = ({ navigation }) => {
                   onPress={() => toggleGoal(g.value)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.goalIcon}>{g.icon}</Text>
+                  <Ionicons name={g.iconName} size={16} color={active ? colors.primary : colors.textSecondary} />
                   <Text style={[styles.goalLabel, active && styles.goalLabelActive]}>
                     {g.label}
                   </Text>
@@ -156,7 +166,7 @@ export const OnboardingStep3: React.FC<Props> = ({ navigation }) => {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: 'transparent',
   },
 
   dotsRow: {
@@ -183,8 +193,13 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
 
-  emoji: {
-    fontSize: 48,
+  emojiGap: {
+    marginBottom: spacing.md,
+  },
+  sectionLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     marginBottom: spacing.md,
   },
   title: {
@@ -207,7 +222,6 @@ const styles = StyleSheet.create({
     fontSize: typography.caption,
     fontWeight: typography.semibold as any,
     color: colors.textSecondary,
-    marginBottom: spacing.md,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
@@ -257,7 +271,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary + '22',
     borderColor: colors.primary,
   },
-  goalIcon: { fontSize: 16 },
   goalLabel: {
     fontSize: typography.caption,
     color: colors.textSecondary,

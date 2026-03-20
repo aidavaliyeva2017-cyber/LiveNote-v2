@@ -4,6 +4,8 @@ export const configureNotificationHandler = () => {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
       shouldPlaySound: false,
       shouldSetBadge: false,
     }),
@@ -25,7 +27,7 @@ export const scheduleReminder = async (date: Date, title: string, body: string) 
       title,
       body,
     },
-    trigger: date,
+    trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date },
   });
 };
 

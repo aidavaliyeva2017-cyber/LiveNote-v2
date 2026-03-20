@@ -1,19 +1,20 @@
 import React from 'react';
 import { ScrollView, TouchableOpacity, Text, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius } from '../../theme';
 
 interface Suggestion {
   label: string;
   message: string;
-  icon: string;
+  iconName: keyof typeof Ionicons.glyphMap;
 }
 
 const DEFAULT_SUGGESTIONS: Suggestion[] = [
-  { icon: '📅', label: "What's on today?",   message: "What's on my schedule today?" },
-  { icon: '➕', label: 'Add a task',          message: 'I want to add a new task.' },
-  { icon: '📚', label: 'Plan study session', message: 'Help me plan a study session.' },
-  { icon: '🗓️', label: 'Plan my week',       message: 'Help me plan my week.' },
-  { icon: '⚡', label: 'Productivity tip',    message: 'Give me a productivity tip.' },
+  { iconName: 'calendar-outline',  label: "What's on today?",  message: "What's on my schedule today?" },
+  { iconName: 'add-circle-outline', label: 'Add a task',        message: 'I want to add a new task.' },
+  { iconName: 'book-outline',       label: 'Plan study session', message: 'Help me plan a study session.' },
+  { iconName: 'calendar',           label: 'Plan my week',       message: 'Help me plan my week.' },
+  { iconName: 'flash-outline',      label: 'Productivity tip',   message: 'Give me a productivity tip.' },
 ];
 
 interface Props {
@@ -36,7 +37,7 @@ export function SuggestedActions({ onSelect, suggestions = DEFAULT_SUGGESTIONS }
             onPress={() => onSelect(s.message)}
             activeOpacity={0.7}
           >
-            <Text style={styles.icon}>{s.icon}</Text>
+            <Ionicons name={s.iconName} size={13} color={colors.textSecondary} />
             <Text style={styles.label}>{s.label}</Text>
           </TouchableOpacity>
         ))}
@@ -66,7 +67,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
-  icon: { fontSize: 13 },
   label: {
     fontSize: typography.caption,
     color: colors.textSecondary,

@@ -14,6 +14,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, spacing, typography, borderRadius } from '../../theme';
 import { useEvents } from '../../context/EventsContext';
+import { useColors } from '../../context/ThemeContext';
 import { useAIChat } from '../../hooks/useAIChat';
 import { ChatBubble } from '../../components/chat/ChatBubble';
 import { TypingIndicator } from '../../components/chat/TypingIndicator';
@@ -29,6 +30,7 @@ const WELCOME_MESSAGE: ChatMessage = {
 };
 
 export const AIChatScreen: React.FC = () => {
+  const c = useColors();
   const { events } = useEvents();
   const { messages, isStreaming, sendMessage, stopStreaming, clearHistory } =
     useAIChat('User', events);
@@ -81,22 +83,16 @@ export const AIChatScreen: React.FC = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={90}
     >
-      <LinearGradient
-        colors={['#070A12', '#0A0E1A', '#0A0E1A', '#0B3A33']}
-        locations={[0, 0.25, 0.6, 1]}
-        style={StyleSheet.absoluteFill}
-      />
-
       {/* ── Header ── */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <View style={styles.headerAvatar}>
+          <View style={[styles.headerAvatar, { backgroundColor: c.primary + '22', borderColor: c.primary + '66' }]}>
             <Text style={styles.headerAvatarIcon}>✨</Text>
           </View>
           <View>
             <Text style={styles.headerTitle}>LiveNote AI</Text>
             <View style={styles.statusRow}>
-              <View style={[styles.statusDot, isStreaming && styles.statusDotActive]} />
+              <View style={[styles.statusDot, isStreaming && { backgroundColor: c.primary }]} />
               <Text style={styles.statusText}>
                 {isStreaming ? 'Thinking…' : 'Online'}
               </Text>
@@ -148,12 +144,15 @@ export const AIChatScreen: React.FC = () => {
         />
 
         {isStreaming ? (
-          <TouchableOpacity style={[styles.sendBtn, styles.stopBtn]} onPress={stopStreaming}>
+          <TouchableOpacity
+            style={[styles.sendBtn, styles.stopBtn, { backgroundColor: c.error, shadowColor: c.error }]}
+            onPress={stopStreaming}
+          >
             <View style={styles.stopIcon} />
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
-            style={[styles.sendBtn, !input.trim() && styles.sendBtnDisabled]}
+            style={[styles.sendBtn, { backgroundColor: c.primary, shadowColor: c.primary }, !input.trim() && styles.sendBtnDisabled]}
             onPress={handleSend}
             disabled={!input.trim()}
           >
@@ -169,7 +168,7 @@ export const AIChatScreen: React.FC = () => {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: 'transparent',
   },
 
   // Header

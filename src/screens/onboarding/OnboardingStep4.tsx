@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Notifications from 'expo-notifications';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { OnboardingStackParamList } from '../../types/navigation';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 
@@ -82,7 +83,7 @@ export const OnboardingStep4: React.FC<Props> = () => {
             colors={[colors.primary + '33', colors.primary + '11']}
             style={styles.heroGradient}
           >
-            <Text style={styles.heroIcon}>🎉</Text>
+            <Ionicons name="gift" size={48} color={colors.primary} />
           </LinearGradient>
         </Animated.View>
 
@@ -96,7 +97,7 @@ export const OnboardingStep4: React.FC<Props> = () => {
         {/* Notification card */}
         <View style={styles.notifCard}>
           <View style={styles.notifCardHeader}>
-            <Text style={styles.notifIcon}>🔔</Text>
+            <Ionicons name="notifications-outline" size={28} color={colors.primary} />
             <View style={styles.notifCardText}>
               <Text style={styles.notifCardTitle}>Smarte Erinnerungen</Text>
               <Text style={styles.notifCardDesc}>
@@ -145,13 +146,14 @@ export const OnboardingStep4: React.FC<Props> = () => {
 
         {/* Feature preview */}
         <View style={styles.previewList}>
-          {[
-            '✨ KI-Chat ist bereit',
-            '📅 Kalender eingerichtet',
-            '⚡ XP-System aktiviert',
-          ].map((item) => (
-            <View key={item} style={styles.previewRow}>
-              <Text style={styles.previewText}>{item}</Text>
+          {([
+            { iconName: 'sparkles-outline' as const,  label: 'KI-Chat ist bereit' },
+            { iconName: 'calendar-outline' as const,  label: 'Kalender eingerichtet' },
+            { iconName: 'flash-outline' as const,     label: 'XP-System aktiviert' },
+          ] as { iconName: keyof typeof Ionicons.glyphMap; label: string }[]).map((item) => (
+            <View key={item.label} style={[styles.previewRow, { flexDirection: 'row', alignItems: 'center', gap: 10 }]}>
+              <Ionicons name={item.iconName} size={18} color={colors.primary} />
+              <Text style={styles.previewText}>{item.label}</Text>
             </View>
           ))}
         </View>
@@ -170,7 +172,7 @@ export const OnboardingStep4: React.FC<Props> = () => {
             style={styles.btn}
           >
             <Text style={styles.btnText}>
-              {loading ? 'Wird gestartet…' : 'LiveNote starten 🚀'}
+              {loading ? 'Wird gestartet…' : 'LiveNote starten →'}
             </Text>
           </LinearGradient>
         </TouchableOpacity>
@@ -182,7 +184,7 @@ export const OnboardingStep4: React.FC<Props> = () => {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: 'transparent',
   },
 
   dotsRow: {
@@ -222,7 +224,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroIcon: { fontSize: 48 },
 
   title: {
     fontSize: 26,
@@ -253,7 +254,6 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     marginBottom: spacing.md,
   },
-  notifIcon: { fontSize: 28 },
   notifCardText: { flex: 1 },
   notifCardTitle: {
     fontSize: typography.body,

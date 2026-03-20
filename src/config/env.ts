@@ -1,9 +1,5 @@
-import Constants from 'expo-constants';
-
-const extra = Constants.expoConfig?.extra ?? {};
-
 export const ENV = {
-  SUPABASE_URL:      extra.SUPABASE_URL      as string,
-  SUPABASE_ANON_KEY: extra.SUPABASE_ANON_KEY as string,
-  ANTHROPIC_API_KEY: extra.ANTHROPIC_API_KEY as string,
+  SUPABASE_URL:      process.env.EXPO_PUBLIC_SUPABASE_URL      ?? '',
+  SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '',
+  ANTHROPIC_API_KEY: process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY ?? '',
 };
