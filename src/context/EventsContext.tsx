@@ -1,95 +1,129 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
-import { addHours, startOfDay } from 'date-fns';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+import { supabase } from '../config/supabase';
+import { useAuth } from './AuthContext';
 import { CalendarEvent, EventCategory, EventPriority } from '../types/event';
 
 interface EventsContextValue {
   events: CalendarEvent[];
-  addEvent: (event: Omit<CalendarEvent, 'id'>) => CalendarEvent;
-  updateEvent: (id: string, patch: Partial<CalendarEvent>) => void;
-  deleteEvent: (id: string) => void;
+  loading: boolean;
+  addEvent: (event: Omit<CalendarEvent, 'id'>) => Promise<CalendarEvent>;
+  updateEvent: (id: string, patch: Partial<CalendarEvent>) => Promise<void>;
+  deleteEvent: (id: string) => Promise<void>;
   toggleComplete: (id: string) => void;
+  refetch: () => Promise<void>;
 }
 
 const EventsContext = createContext<EventsContextValue | undefined>(undefined);
 
-const createMockEvents = (): CalendarEvent[] => {
-  const now = new Date();
-  const base = startOfDay(now);
-  const make = (
-    title: string,
-    offsetHours: number,
-    durationHours: number,
-    category: EventCategory,
-    priority: EventPriority,
-    completed?: boolean,
-  ): CalendarEvent => {
-    const start = addHours(base, offsetHours);
-    const end = addHours(start, durationHours);
-    return {
-      id: `${title}-${offsetHours}`,
-      title,
-      start,
-      end,
-      category,
-      priority,
-      completed,
-    };
+// ── DB row → CalendarEvent ────────────────────────────────────────────────────
+function rowToEvent(row: any): CalendarEvent {
+  return {
+    id:          row.id,
+    title:       row.title,
+    description: row.description ?? undefined,
+    start:       new Date(row.start_date),
+    end:         new Date(row.end_date),
+    category:    (row.category as EventCategory) ?? 'personal',
+    priority:    (row.priority as EventPriority)  ?? 'medium',
+    completed:   row.completed ?? false,
   };
+}
 
-  return [
-    make('Morning Yoga', 8, 1, 'health', 'low', true),
-    make('Check Emails', 9, 1, 'work', 'medium', true),
-    make('Study Chemistry — Ch. 7', 10, 2, 'work', 'high'),
-    make('Grocery Shopping', 13, 1, 'errands', 'medium'),
-    make('Video Call with Mom', 14.5, 0.75, 'personal', 'medium'),
-  ];
-};
+// ── CalendarEvent → DB row (only persisted columns) ──────────────────────────
+function eventToRow(event: Omit<CalendarEvent, 'id'>, userId: string) {
+  return {
+    user_id:     userId,
+    title:       event.title,
+    description: event.description ?? null,
+    start_date:  event.start.toISOString(),
+    end_date:    event.end.toISOString(),
+  };
+}
 
-export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => {
-  const [events, setEvents] = useState<CalendarEvent[]>(() => createMockEvents());
+export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
+  const [events,  setEvents]  = useState<CalendarEvent[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const addEvent: EventsContextValue['addEvent'] = (event) => {
-    const newEvent: CalendarEvent = {
-      ...event,
-      id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    };
-    setEvents((prev) => [...prev, newEvent]);
+  const fetchEvents = useCallback(async () => {
+    if (!user) { setEvents([]); return; }
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('events')
+        .select('id, title, description, start_date, end_date')
+        .eq('user_id', user.id)
+        .order('start_date', { ascending: true });
+
+      if (error) {
+        console.error('[EventsContext] fetch error:', error.message);
+        return;
+      }
+      setEvents((data ?? []).map(rowToEvent));
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => { void fetchEvents(); }, [fetchEvents]);
+
+  // ── addEvent ────────────────────────────────────────────────────────────────
+  const addEvent = useCallback(async (event: Omit<CalendarEvent, 'id'>): Promise<CalendarEvent> => {
+    if (!user) throw new Error('Not authenticated');
+    const { data, error } = await supabase
+      .from('events')
+      .insert(eventToRow(event, user.id))
+      .select('id, title, description, start_date, end_date')
+      .single();
+    if (error) throw error;
+    const newEvent = rowToEvent(data);
+    setEvents(prev => [...prev, newEvent].sort((a, b) => a.start.getTime() - b.start.getTime()));
     return newEvent;
-  };
+  }, [user]);
 
-  const updateEvent: EventsContextValue['updateEvent'] = (id, patch) => {
-    setEvents((prev) =>
-      prev.map((evt) => (evt.id === id ? { ...evt, ...patch } : evt)),
-    );
-  };
+  // ── updateEvent ─────────────────────────────────────────────────────────────
+  const updateEvent = useCallback(async (id: string, patch: Partial<CalendarEvent>): Promise<void> => {
+    const dbPatch: Record<string, any> = {};
+    if (patch.title       !== undefined) dbPatch.title       = patch.title;
+    if (patch.description !== undefined) dbPatch.description = patch.description ?? null;
+    if (patch.start       !== undefined) dbPatch.start_date  = patch.start.toISOString();
+    if (patch.end         !== undefined) dbPatch.end_date    = patch.end.toISOString();
 
-  const deleteEvent: EventsContextValue['deleteEvent'] = (id) => {
-    setEvents((prev) => prev.filter((evt) => evt.id !== id));
-  };
+    if (Object.keys(dbPatch).length > 0) {
+      const { error } = await supabase.from('events').update(dbPatch).eq('id', id);
+      if (error) throw error;
+    }
+    setEvents(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
+  }, []);
 
-  const toggleComplete: EventsContextValue['toggleComplete'] = (id) => {
-    setEvents((prev) =>
-      prev.map((evt) =>
-        evt.id === id ? { ...evt, completed: !evt.completed } : evt,
-      ),
-    );
-  };
+  // ── deleteEvent ─────────────────────────────────────────────────────────────
+  const deleteEvent = useCallback(async (id: string): Promise<void> => {
+    const { error } = await supabase.from('events').delete().eq('id', id);
+    if (error) throw error;
+    setEvents(prev => prev.filter(e => e.id !== id));
+  }, []);
 
-  const value = useMemo(
-    () => ({ events, addEvent, updateEvent, deleteEvent, toggleComplete }),
-    [events],
-  );
+  // ── toggleComplete (local only — no `completed` column in DB) ───────────────
+  const toggleComplete = useCallback((id: string) => {
+    setEvents(prev => prev.map(e => e.id === id ? { ...e, completed: !e.completed } : e));
+  }, []);
+
+  const value = useMemo(() => ({
+    events, loading, addEvent, updateEvent, deleteEvent, toggleComplete, refetch: fetchEvents,
+  }), [events, loading, addEvent, updateEvent, deleteEvent, toggleComplete, fetchEvents]);
 
   return <EventsContext.Provider value={value}>{children}</EventsContext.Provider>;
 };
 
-export const useEvents = () => {
+export const useEvents = (): EventsContextValue => {
   const ctx = useContext(EventsContext);
-  if (!ctx) {
-    throw new Error('useEvents must be used within EventsProvider');
-  }
+  if (!ctx) throw new Error('useEvents must be used within EventsProvider');
   return ctx;
 };
-

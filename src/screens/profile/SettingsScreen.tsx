@@ -227,6 +227,13 @@ export const SettingsScreen: React.FC = () => {
           />
           <View style={styles.divider} />
           <SettingsRow
+            icon="calendar-number-outline"
+            label="Import Calendar (.ics)"
+            onPress={() => navigation.navigate('ICSImport')}
+            iconColor={colors.primary}
+          />
+          <View style={styles.divider} />
+          <SettingsRow
             icon="shield-outline"
             label="Privacy Policy"
             onPress={() => Alert.alert('Privacy Policy', 'Visit livenote.app/privacy')}

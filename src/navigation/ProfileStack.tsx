@@ -7,6 +7,7 @@ import { ChangeThemeScreen } from '../screens/profile/ChangeThemeScreen';
 import { FamilyScreen } from '../screens/family/FamilyScreen';
 import { JoinFamilyScreen } from '../screens/family/JoinFamilyScreen';
 import { ConnectUntisScreen } from '../screens/untis/ConnectUntisScreen';
+import { ICSImportScreen } from '../screens/profile/ICSImportScreen';
 
 export type ProfileStackParamList = {
   ProfileMain: undefined;
@@ -16,6 +17,7 @@ export type ProfileStackParamList = {
   Family: undefined;
   JoinFamily: undefined;
   ConnectUntis: undefined;
+  ICSImport: undefined;
 };
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
@@ -29,5 +31,6 @@ export const ProfileStackNavigator = () => (
     <Stack.Screen name="Family"       component={FamilyScreen} />
     <Stack.Screen name="JoinFamily"   component={JoinFamilyScreen} />
     <Stack.Screen name="ConnectUntis" component={ConnectUntisScreen} />
+    <Stack.Screen name="ICSImport"    component={ICSImportScreen} />
   </Stack.Navigator>
 );

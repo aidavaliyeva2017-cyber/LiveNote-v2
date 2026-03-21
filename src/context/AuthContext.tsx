@@ -131,16 +131,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const emailRedirectTo = Linking.createURL(AUTH_CALLBACK_PATH);
     const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name }, emailRedirectTo } });
     if (error) throw error;
+
+    // Session present → logged in immediately (email confirmation is OFF)
     if (data.session) return { needsConfirmation: false, alreadyExists: false };
 
-    // No session → try signing in to determine cause
-    const { data: sd, error: se } = await supabase.auth.signInWithPassword({ email, password });
-    if (sd.session) return { needsConfirmation: false, alreadyExists: true };
-    const msg = se?.message ?? '';
-    if (msg.includes('Email not confirmed') || msg.includes('email_not_confirmed'))
-      return { needsConfirmation: true, alreadyExists: false };
-    if (msg.includes('Invalid login credentials') || msg.includes('invalid_credentials'))
+    // Supabase sets identities:[] when the email is already registered
+    if ((data.user?.identities?.length ?? 1) === 0)
       return { needsConfirmation: false, alreadyExists: true };
+
+    // User created but no session → email confirmation is ON in Supabase
     return { needsConfirmation: true, alreadyExists: false };
   }, []);
 
