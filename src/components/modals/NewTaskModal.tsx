@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   Modal,
   View,
@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius } from '../../theme';
 import { CalendarEvent, EventCategory, EventPriority } from '../../types/event';
 import { useEvents } from '../../context/EventsContext';
+import { CustomCalendarView } from './CustomCalendarView';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -125,9 +126,15 @@ export const NewTaskModal: React.FC<Props> = ({
   const [notes, setNotes]               = useState('');
 
   // ── Picker state ──
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [pickerMode, setPickerMode]         = useState<PickerMode>(null);
-  const [pickerTime, setPickerTime]         = useState<Date>(makeDefaultStartTime);
+  const [showDatePicker, setShowDatePicker]         = useState(false);
+  const [pickerMode, setPickerMode]                 = useState<PickerMode>(null);
+  const [pickerTime, setPickerTime]                 = useState<Date>(makeDefaultStartTime);
+  const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
+  const [customDateSelected, setCustomDateSelected] = useState(false);
+
+  // ── Carousel ref for scrolling past "..." button ──
+  const carouselRef = useRef<ScrollView>(null);
+  const dotsWidth   = useRef(0);
 
   // ── Date options (next 60 days) ──
   const dateOptions = useMemo<Date[]>(() => {
@@ -158,6 +165,8 @@ export const NewTaskModal: React.FC<Props> = ({
     }
     setShowDatePicker(false);
     setPickerMode(null);
+    setShowCustomDatePicker(false);
+    setCustomDateSelected(false);
   }, [visible, event?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Derived dates (apply selected time onto selected calendar date) ──
@@ -314,18 +323,34 @@ export const NewTaskModal: React.FC<Props> = ({
 
             {showDatePicker && (
               <ScrollView
+                ref={carouselRef}
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={[styles.pillRow, styles.inlinePicker]}
+                onContentSizeChange={() => {
+                  carouselRef.current?.scrollTo({ x: dotsWidth.current + spacing.sm, animated: false });
+                }}
               >
+                {/* "..." button — scroll left to reveal, opens full-calendar picker */}
+                <TouchableOpacity
+                  onLayout={(e) => { dotsWidth.current = e.nativeEvent.layout.width; }}
+                  style={[styles.datePill, customDateSelected && styles.datePillActive]}
+                  onPress={() => setShowCustomDatePicker(true)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.datePillBottom, customDateSelected && styles.datePillBottomActive]}>
+                    {'...'}
+                  </Text>
+                </TouchableOpacity>
+
                 {dateOptions.map((d) => {
-                  const active = isSameDay(d, selectedDate);
+                  const active = !customDateSelected && isSameDay(d, selectedDate);
                   const { top, bottom } = formatDatePill(d);
                   return (
                     <TouchableOpacity
                       key={d.toISOString()}
                       style={[styles.datePill, active && styles.datePillActive]}
-                      onPress={() => { setSelectedDate(d); setShowDatePicker(false); }}
+                      onPress={() => { setSelectedDate(d); setCustomDateSelected(false); setShowDatePicker(false); }}
                       activeOpacity={0.75}
                     >
                       <Text style={[styles.datePillTop, active && styles.datePillTopActive]}>{top}</Text>
@@ -477,6 +502,38 @@ export const NewTaskModal: React.FC<Props> = ({
           </ScrollView>
         </TouchableOpacity>
       </KeyboardAvoidingView>
+
+      {/* ── Custom date picker overlay (full-calendar graphical style) ── */}
+      {showCustomDatePicker && (
+        <View style={styles.pickerOverlay}>
+          <TouchableOpacity
+            style={styles.pickerBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowCustomDatePicker(false)}
+          />
+          <View style={styles.pickerSheet}>
+            <View style={styles.pickerToolbar}>
+              <TouchableOpacity
+                style={styles.pickerToolbarBtn}
+                onPress={() => setShowCustomDatePicker(false)}
+              >
+                <Text style={styles.pickerCancel}>Abbrechen</Text>
+              </TouchableOpacity>
+              <Text style={styles.pickerTitle}>Datum wählen</Text>
+              <View style={styles.pickerToolbarBtn} />
+            </View>
+            <CustomCalendarView
+              selectedDate={selectedDate}
+              onSelectDate={(date) => {
+                setSelectedDate(date);
+                setCustomDateSelected(true);
+                setShowCustomDatePicker(false);
+                setShowDatePicker(false);
+              }}
+            />
+          </View>
+        </View>
+      )}
 
       {/* ── Native wheel picker overlay (start or end) ── */}
       {pickerMode !== null && (
