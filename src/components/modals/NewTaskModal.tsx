@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -9,9 +9,10 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Switch,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { format, addDays, startOfDay } from 'date-fns';
+import { format, startOfDay } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius } from '../../theme';
 import { CalendarEvent, EventCategory, EventPriority } from '../../types/event';
@@ -29,7 +30,16 @@ interface Props {
   onDelete?: (id: string) => void;
 }
 
-type PickerMode = 'start' | 'end' | 'duration' | null;
+type AppMode        = 'event' | 'reminder';
+type TimePickerMode = 'startTime' | 'endTime' | 'reminderTime' | null;
+type DatePickerTarget = 'start' | 'end' | 'reminder' | null;
+
+interface OptionSheetConfig {
+  title: string;
+  options: string[];
+  current: string;
+  onSelect: (value: string) => void;
+}
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -48,59 +58,38 @@ const PRIORITY_META: { key: EventPriority; label: string; color: string }[] = [
   { key: 'low',    label: 'Low',    color: colors.info },
 ];
 
-const DATE_RANGE_DAYS = 60;
-const MIN_DURATION_MS = 5 * 60_000; // 5 minutes minimum
+const TRAVEL_TIME_OPTIONS = ['Ohne', '5 Min', '10 Min', '15 Min', '30 Min', '1 Std', '2 Std'];
+const REPEAT_OPTIONS      = ['Nie', 'Täglich', 'Wöchentlich', 'Alle 2 Wochen', 'Monatlich', 'Jährlich'];
+const ALERT_OPTIONS       = [
+  'Ohne', 'Zum Zeitpunkt', '5 Min vorher', '10 Min vorher',
+  '15 Min vorher', '30 Min vorher', '1 Std vorher', '2 Std vorher', '1 Tag vorher',
+];
+
+const MIN_DURATION_MS = 5 * 60_000;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Apply the h:mm from `time` onto the calendar date of `date`. */
+const WEEKDAYS_DE = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+const MONTHS_DE   = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+
 function applyTime(date: Date, time: Date): Date {
   const d = new Date(date);
   d.setHours(time.getHours(), time.getMinutes(), 0, 0);
   return d;
 }
 
-function makeDefaultStartTime(): Date {
+function makeTime(h: number, m: number): Date {
   const d = new Date();
-  d.setHours(12, 0, 0, 0);
+  d.setHours(h, m, 0, 0);
   return d;
 }
 
-function makeDefaultEndTime(): Date {
-  const d = new Date();
-  d.setHours(13, 0, 0, 0);
-  return d;
-}
-
-function isSameDay(a: Date, b: Date): boolean {
-  return startOfDay(a).getTime() === startOfDay(b).getTime();
-}
-
-function formatDateFieldLabel(date: Date): string {
+function formatRelativeDate(date: Date): string {
   const today = startOfDay(new Date());
-  const diff = Math.round((startOfDay(date).getTime() - today.getTime()) / 86_400_000);
-  if (diff === 0) return `Heute, ${format(date, 'd. MMM')}`;
-  if (diff === 1) return `Morgen, ${format(date, 'd. MMM')}`;
-  return format(date, 'EEE, d. MMM');
-}
-
-function formatDatePill(date: Date): { top: string; bottom: string } {
-  const today = startOfDay(new Date());
-  const diff = Math.round((startOfDay(date).getTime() - today.getTime()) / 86_400_000);
-  if (diff === 0) return { top: 'Heute', bottom: format(date, 'd') };
-  if (diff === 1) return { top: 'Mrgn',  bottom: format(date, 'd') };
-  return { top: format(date, 'EEE'), bottom: format(date, 'd') };
-}
-
-function formatDuration(startDate: Date, endDate: Date): string {
-  const ms = endDate.getTime() - startDate.getTime();
-  if (ms <= 0) return '—';
-  const totalMins = Math.round(ms / 60_000);
-  const h = Math.floor(totalMins / 60);
-  const m = totalMins % 60;
-  if (h === 0) return `${m} min`;
-  if (m === 0) return `${h} hr`;
-  return `${h} hr ${m} min`;
+  const diff  = Math.round((startOfDay(date).getTime() - today.getTime()) / 86_400_000);
+  if (diff === 0) return 'Heute';
+  if (diff === 1) return 'Morgen';
+  return `${WEEKDAYS_DE[date.getDay()]}., ${date.getDate()}. ${MONTHS_DE[date.getMonth()]}`;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -116,154 +105,202 @@ export const NewTaskModal: React.FC<Props> = ({
   const { addEvent } = useEvents();
   const isEditMode = !!event;
 
-  // ── Form state ──
-  const [title, setTitle]               = useState('');
-  const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(defaultDate ?? new Date()));
-  const [startTime, setStartTime]       = useState<Date>(makeDefaultStartTime);
-  const [endTime, setEndTime]           = useState<Date>(makeDefaultEndTime);
-  const [category, setCategory]         = useState<EventCategory>('work');
-  const [priority, setPriority]         = useState<EventPriority>('medium');
-  const [notes, setNotes]               = useState('');
+  // ── Mode ──
+  const [appMode, setAppMode] = useState<AppMode>('event');
 
-  // ── Picker state ──
-  const [showDatePicker, setShowDatePicker]         = useState(false);
-  const [pickerMode, setPickerMode]                 = useState<PickerMode>(null);
-  const [pickerTime, setPickerTime]                 = useState<Date>(makeDefaultStartTime);
-  const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
-  const [customDateSelected, setCustomDateSelected] = useState(false);
+  // ── Shared ──
+  const [title, setTitle]       = useState('');
+  const [category, setCategory] = useState<EventCategory>('work');
+  const [priority, setPriority] = useState<EventPriority>('medium');
 
-  // ── Carousel ref for scrolling past "..." button ──
-  const carouselRef = useRef<ScrollView>(null);
-  const dotsWidth   = useRef(0);
+  // ── Event fields ──
+  const [location, setLocation]     = useState('');
+  const [allDay, setAllDay]         = useState(false);
+  const [startDate, setStartDate]   = useState<Date>(startOfDay(defaultDate ?? new Date()));
+  const [startTime, setStartTime]   = useState<Date>(makeTime(12, 0));
+  const [endDate, setEndDate]       = useState<Date>(startOfDay(defaultDate ?? new Date()));
+  const [endTime, setEndTime]       = useState<Date>(makeTime(13, 0));
+  const [travelTime, setTravelTime] = useState('Ohne');
+  const [repeat, setRepeat]         = useState('Nie');
+  const [eventAlert, setEventAlert] = useState('Ohne');
 
-  // ── Date options (next 60 days) ──
-  const dateOptions = useMemo<Date[]>(() => {
-    const today = startOfDay(new Date());
-    return Array.from({ length: DATE_RANGE_DAYS }, (_, i) => addDays(today, i));
-  }, []);
+  // ── Reminder fields ──
+  const [reminderNotes, setReminderNotes]     = useState('');
+  const [reminderUrl, setReminderUrl]         = useState('');
+  const [reminderDate, setReminderDate]       = useState<Date>(startOfDay(defaultDate ?? new Date()));
+  const [hasReminderTime, setHasReminderTime] = useState(false);
+  const [reminderTime, setReminderTime]       = useState<Date>(makeTime(9, 0));
+  const [isUrgent, setIsUrgent]               = useState(false);
+  const [reminderRepeat, setReminderRepeat]   = useState('Nie');
 
-  // ── Sync when modal opens or event changes ──
+  // ── Picker UI ──
+  const [datePickerTarget, setDatePickerTarget] = useState<DatePickerTarget>(null);
+  const [timePickerMode, setTimePickerMode]     = useState<TimePickerMode>(null);
+  const [pickerTime, setPickerTime]             = useState<Date>(makeTime(12, 0));
+  const [optionSheet, setOptionSheet]           = useState<OptionSheetConfig | null>(null);
+
+  // ── Reset when modal opens or event changes ──
   useEffect(() => {
     if (!visible) return;
+    const base = startOfDay(defaultDate ?? new Date());
 
     if (event) {
       setTitle(event.title);
-      setSelectedDate(startOfDay(event.start));
+      setStartDate(startOfDay(event.start));
       setStartTime(event.start);
+      setEndDate(startOfDay(event.end));
       setEndTime(event.end);
       setCategory(event.category);
       setPriority(event.priority);
-      setNotes(event.description ?? '');
+      setLocation(event.description ?? '');
     } else {
       setTitle('');
-      setSelectedDate(startOfDay(defaultDate ?? new Date()));
-      setStartTime(makeDefaultStartTime());
-      setEndTime(makeDefaultEndTime());
+      setLocation('');
+      setAllDay(false);
+      setStartDate(base);
+      setStartTime(makeTime(12, 0));
+      setEndDate(base);
+      setEndTime(makeTime(13, 0));
+      setTravelTime('Ohne');
+      setRepeat('Nie');
+      setEventAlert('Ohne');
+      setReminderNotes('');
+      setReminderUrl('');
+      setReminderDate(base);
+      setHasReminderTime(false);
+      setReminderTime(makeTime(9, 0));
+      setIsUrgent(false);
+      setReminderRepeat('Nie');
       setCategory('work');
       setPriority('medium');
-      setNotes('');
     }
-    setShowDatePicker(false);
-    setPickerMode(null);
-    setShowCustomDatePicker(false);
-    setCustomDateSelected(false);
+    setAppMode('event');
+    setDatePickerTarget(null);
+    setTimePickerMode(null);
+    setOptionSheet(null);
   }, [visible, event?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Derived dates (apply selected time onto selected calendar date) ──
-  const startDate = applyTime(selectedDate, startTime);
-  // If end time is on or before start time → treat as next day
-  let endDate = applyTime(selectedDate, endTime);
-  if (endDate.getTime() - startDate.getTime() < MIN_DURATION_MS) {
-    endDate = new Date(endDate.getTime() + 24 * 60 * 60_000);
-  }
 
   const canSave = title.trim().length > 0;
 
-  // ── Picker handlers ──
-  const openPicker = useCallback((mode: 'start' | 'end' | 'duration') => {
-    if (mode === 'duration') {
-      const durationMins = Math.max(5, Math.round((endDate.getTime() - startDate.getTime()) / 60_000));
-      const d = new Date(0);
-      d.setHours(Math.floor(durationMins / 60), durationMins % 60, 0, 0);
-      setPickerTime(d);
-    } else {
-      setPickerTime(mode === 'start' ? startTime : endTime);
-    }
-    setShowDatePicker(false);
-    setPickerMode(mode);
-  }, [startTime, endTime, startDate, endDate]);
-
-  const handlePickerChange = useCallback(
-    (_: DateTimePickerEvent, date?: Date) => {
-      if (date) setPickerTime(date);
-    },
-    []
-  );
-
-  const handlePickerConfirm = useCallback(() => {
-    if (pickerMode === 'start') {
-      const prevDurationMs = endDate.getTime() - startDate.getTime();
-      setStartTime(pickerTime);
-      // Shift end time to preserve the duration
-      const newEnd = new Date(pickerTime.getTime() + prevDurationMs);
-      setEndTime(newEnd);
-    } else if (pickerMode === 'end') {
-      setEndTime(pickerTime);
-    } else if (pickerMode === 'duration') {
-      const durationMins = pickerTime.getHours() * 60 + pickerTime.getMinutes();
-      const durationMs = Math.max(MIN_DURATION_MS, durationMins * 60_000);
-      setEndTime(new Date(startTime.getTime() + durationMs));
-    }
-    setPickerMode(null);
-  }, [pickerMode, pickerTime, startDate, endDate, startTime]);
-
-  // ── Save / Delete ──
+  // ── Handlers ──
   const handleClose = useCallback(() => {
-    setPickerMode(null);
-    setShowDatePicker(false);
+    setDatePickerTarget(null);
+    setTimePickerMode(null);
+    setOptionSheet(null);
     onClose();
   }, [onClose]);
 
-  const handleSave = useCallback(
-    (markComplete: boolean) => {
-      const trimmedTitle = title.trim();
-      if (!trimmedTitle) return;
+  const handleSave = useCallback((markComplete: boolean) => {
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) return;
 
-      if (isEditMode && onSave && event) {
-        onSave(event.id, {
-          title:       trimmedTitle,
-          start:       startDate,
-          end:         endDate,
-          category,
-          priority,
-          description: notes.trim() || undefined,
-          ...(markComplete ? { completed: true } : {}),
-        });
-      } else {
-        addEvent({
-          title:       trimmedTitle,
-          start:       startDate,
-          end:         endDate,
-          category,
-          priority,
-          description: notes.trim() || undefined,
-          completed:   markComplete,
-        });
+    let evStart: Date;
+    let evEnd: Date;
+
+    if (appMode === 'event') {
+      evStart = allDay ? startOfDay(startDate) : applyTime(startDate, startTime);
+      evEnd   = allDay ? startOfDay(endDate)   : applyTime(endDate, endTime);
+      if (!allDay && evEnd.getTime() - evStart.getTime() < MIN_DURATION_MS) {
+        evEnd = new Date(evEnd.getTime() + 24 * 60 * 60_000);
       }
-      handleClose();
-    },
-    [title, isEditMode, event, onSave, startDate, endDate, category, priority, notes, addEvent, handleClose]
-  );
+    } else {
+      evStart = hasReminderTime
+        ? applyTime(reminderDate, reminderTime)
+        : startOfDay(reminderDate);
+      evEnd = evStart;
+    }
+
+    const payload = {
+      title:       trimmedTitle,
+      start:       evStart,
+      end:         evEnd,
+      category,
+      priority,
+      description: appMode === 'event'
+        ? (location.trim() || undefined)
+        : (reminderNotes.trim() || undefined),
+      ...(markComplete ? { completed: true } : {}),
+    };
+
+    if (isEditMode && onSave && event) {
+      onSave(event.id, payload);
+    } else {
+      addEvent(payload);
+    }
+    handleClose();
+  }, [
+    title, appMode, allDay, startDate, startTime, endDate, endTime,
+    hasReminderTime, reminderDate, reminderTime, location, reminderNotes,
+    category, priority, isEditMode, event, onSave, addEvent, handleClose,
+  ]);
 
   const handleDelete = useCallback(() => {
     if (isEditMode && onDelete && event) onDelete(event.id);
     handleClose();
   }, [isEditMode, event, onDelete, handleClose]);
 
-  const pickerTitle =
-    pickerMode === 'start' ? 'Startzeit' :
-    pickerMode === 'end'   ? 'Endzeit'   :
-                             'Dauer';
+  const openTimePicker = useCallback((mode: NonNullable<TimePickerMode>) => {
+    const t = mode === 'startTime' ? startTime
+            : mode === 'endTime'   ? endTime
+            :                        reminderTime;
+    setPickerTime(t);
+    setDatePickerTarget(null);
+    setOptionSheet(null);
+    setTimePickerMode(mode);
+  }, [startTime, endTime, reminderTime]);
+
+  const handleTimePickerChange = useCallback((_: DateTimePickerEvent, date?: Date) => {
+    if (date) setPickerTime(date);
+  }, []);
+
+  const handleTimePickerConfirm = useCallback(() => {
+    if (timePickerMode === 'startTime')    setStartTime(pickerTime);
+    else if (timePickerMode === 'endTime') setEndTime(pickerTime);
+    else                                    setReminderTime(pickerTime);
+    setTimePickerMode(null);
+  }, [timePickerMode, pickerTime]);
+
+  const handleDateSelect = useCallback((date: Date) => {
+    if (datePickerTarget === 'start')        setStartDate(date);
+    else if (datePickerTarget === 'end')     setEndDate(date);
+    else if (datePickerTarget === 'reminder') setReminderDate(date);
+    setDatePickerTarget(null);
+  }, [datePickerTarget]);
+
+  const openOptionSheet = useCallback((config: OptionSheetConfig) => {
+    setDatePickerTarget(null);
+    setTimePickerMode(null);
+    setOptionSheet(config);
+  }, []);
+
+  // ── Inline helpers ──
+  const Divider = () => <View style={styles.divider} />;
+
+  const PickerRow = ({
+    icon, label, value, onPress,
+  }: { icon: string; label: string; value: string; onPress: () => void }) => (
+    <TouchableOpacity style={styles.cardRow} onPress={onPress} activeOpacity={0.7}>
+      <Ionicons name={icon as any} size={16} color={colors.textTertiary} style={styles.rowIcon} />
+      <Text style={styles.cardLabel}>{label}</Text>
+      <View style={styles.rowRight}>
+        <Text style={styles.cardValue}>{value}</Text>
+        <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} />
+      </View>
+    </TouchableOpacity>
+  );
+
+  const NavRow = ({
+    icon, iconColor, label, value,
+  }: { icon: string; iconColor: string; label: string; value: string }) => (
+    <View style={styles.cardRow}>
+      <Ionicons name={icon as any} size={16} color={iconColor} style={styles.rowIcon} />
+      <Text style={styles.cardLabel}>{label}</Text>
+      <View style={styles.rowRight}>
+        <Text style={styles.cardValue}>{value}</Text>
+        <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} />
+      </View>
+    </View>
+  );
 
   // ── Render ──
   return (
@@ -273,10 +310,8 @@ export const NewTaskModal: React.FC<Props> = ({
       transparent
       onRequestClose={handleClose}
     >
-      {/* Main backdrop */}
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={handleClose} />
 
-      {/* Form sheet */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.sheetWrapper}
@@ -285,192 +320,376 @@ export const NewTaskModal: React.FC<Props> = ({
         <TouchableOpacity activeOpacity={1} style={styles.sheet}>
           <View style={styles.handle} />
 
+          {/* ── Header ── */}
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.headerBtn} onPress={handleClose}>
+              <Ionicons name="close" size={22} color={colors.textSecondary} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>{isEditMode ? 'Bearbeiten' : 'Neu'}</Text>
+            <TouchableOpacity
+              style={styles.headerBtn}
+              onPress={() => handleSave(false)}
+              disabled={!canSave}
+            >
+              <Ionicons
+                name="checkmark"
+                size={24}
+                color={canSave ? colors.primary : colors.textTertiary}
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* ── Segment Control ── */}
+          <View style={styles.segmentContainer}>
+            {(['event', 'reminder'] as AppMode[]).map((m) => (
+              <TouchableOpacity
+                key={m}
+                style={[styles.segmentOption, appMode === m && styles.segmentOptionActive]}
+                onPress={() => setAppMode(m)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.segmentText, appMode === m && styles.segmentTextActive]}>
+                  {m === 'event' ? 'Ereignis' : 'Erinnerung'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* ── Scrollable content ── */}
           <ScrollView
             showsVerticalScrollIndicator={false}
             bounces={false}
             keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.scrollContent}
           >
-            {/* Header */}
-            <Text style={styles.sheetTitle}>
-              {isEditMode ? 'Edit Task' : 'New Task'}
-            </Text>
+            {appMode === 'event' ? (
+              <>
+                {/* 1 – Grundinfos */}
+                <View style={styles.sectionCard}>
+                  <TextInput
+                    style={styles.cardTextInput}
+                    value={title}
+                    onChangeText={setTitle}
+                    placeholder="Titel"
+                    placeholderTextColor={colors.textTertiary}
+                    returnKeyType="next"
+                    maxLength={100}
+                    autoFocus={!isEditMode}
+                  />
+                  <Divider />
+                  <View style={styles.cardRow}>
+                    <Ionicons name="location-outline" size={16} color={colors.textTertiary} style={styles.rowIcon} />
+                    <TextInput
+                      style={styles.cardTextInputInline}
+                      value={location}
+                      onChangeText={setLocation}
+                      placeholder="Standort oder Videoanruf"
+                      placeholderTextColor={colors.textTertiary}
+                      returnKeyType="done"
+                      maxLength={200}
+                    />
+                  </View>
+                </View>
 
-            {/* Title */}
-            <TextInput
-              style={styles.titleInput}
-              value={title}
-              onChangeText={setTitle}
-              placeholder="Task name…"
-              placeholderTextColor={colors.textTertiary}
-              returnKeyType="done"
-              maxLength={100}
-              autoFocus={!isEditMode}
-            />
+                {/* 2 – Zeitplanung */}
+                <View style={styles.sectionCard}>
+                  {/* Ganztägig */}
+                  <View style={styles.cardRow}>
+                    <Text style={styles.cardLabel}>Ganztägig</Text>
+                    <Switch
+                      value={allDay}
+                      onValueChange={setAllDay}
+                      trackColor={{ false: colors.border, true: colors.primary }}
+                      ios_backgroundColor={colors.surfaceVariant}
+                    />
+                  </View>
+                  <Divider />
+                  {/* Beginn */}
+                  <View style={styles.cardRow}>
+                    <Text style={styles.cardLabel}>Beginn</Text>
+                    <View style={styles.dateTimeButtons}>
+                      <TouchableOpacity
+                        style={styles.dateTimeBtn}
+                        onPress={() => setDatePickerTarget('start')}
+                      >
+                        <Text style={styles.dateTimeBtnText}>{formatRelativeDate(startDate)}</Text>
+                      </TouchableOpacity>
+                      {!allDay && (
+                        <TouchableOpacity
+                          style={styles.dateTimeBtn}
+                          onPress={() => openTimePicker('startTime')}
+                        >
+                          <Text style={styles.dateTimeBtnText}>{format(startTime, 'HH:mm')}</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                  <Divider />
+                  {/* Ende */}
+                  <View style={styles.cardRow}>
+                    <Text style={styles.cardLabel}>Ende</Text>
+                    <View style={styles.dateTimeButtons}>
+                      <TouchableOpacity
+                        style={styles.dateTimeBtn}
+                        onPress={() => setDatePickerTarget('end')}
+                      >
+                        <Text style={styles.dateTimeBtnText}>{formatRelativeDate(endDate)}</Text>
+                      </TouchableOpacity>
+                      {!allDay && (
+                        <TouchableOpacity
+                          style={styles.dateTimeBtn}
+                          onPress={() => openTimePicker('endTime')}
+                        >
+                          <Text style={styles.dateTimeBtnText}>{format(endTime, 'HH:mm')}</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                  <Divider />
+                  {/* Wegzeit */}
+                  <PickerRow
+                    icon="car-outline"
+                    label="Wegzeit"
+                    value={travelTime}
+                    onPress={() => openOptionSheet({
+                      title: 'Wegzeit',
+                      options: TRAVEL_TIME_OPTIONS,
+                      current: travelTime,
+                      onSelect: setTravelTime,
+                    })}
+                  />
+                </View>
 
-            {/* ── Date ── */}
-            <TouchableOpacity
-              style={styles.fieldRow}
-              onPress={() => {
-                setPickerMode(null);
-                setShowDatePicker(v => !v);
-              }}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="calendar-outline" size={18} color={colors.textSecondary} />
-              <Text style={styles.fieldLabel}>Date</Text>
-              <Text style={styles.fieldValue}>{formatDateFieldLabel(selectedDate)}</Text>
-            </TouchableOpacity>
+                {/* 3 – Wiederholen */}
+                <View style={styles.sectionCard}>
+                  <PickerRow
+                    icon="repeat-outline"
+                    label="Wiederholen"
+                    value={repeat}
+                    onPress={() => openOptionSheet({
+                      title: 'Wiederholen',
+                      options: REPEAT_OPTIONS,
+                      current: repeat,
+                      onSelect: setRepeat,
+                    })}
+                  />
+                </View>
 
-            {showDatePicker && (
-              <ScrollView
-                ref={carouselRef}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={[styles.pillRow, styles.inlinePicker]}
-                onContentSizeChange={() => {
-                  carouselRef.current?.scrollTo({ x: dotsWidth.current + spacing.sm, animated: false });
-                }}
-              >
-                {/* "..." button — scroll left to reveal, opens full-calendar picker */}
-                <TouchableOpacity
-                  onLayout={(e) => { dotsWidth.current = e.nativeEvent.layout.width; }}
-                  style={[styles.datePill, customDateSelected && styles.datePillActive]}
-                  onPress={() => setShowCustomDatePicker(true)}
-                  activeOpacity={0.75}
-                >
-                  <Text style={[styles.datePillBottom, customDateSelected && styles.datePillBottomActive]}>
-                    {'...'}
-                  </Text>
-                </TouchableOpacity>
+                {/* 4 – Kalender & Eingeladene */}
+                <View style={styles.sectionCard}>
+                  <NavRow
+                    icon="calendar-outline"
+                    iconColor={colors.categoryPersonal}
+                    label="Kalender"
+                    value="Privat"
+                  />
+                  <Divider />
+                  <NavRow
+                    icon="people-outline"
+                    iconColor={colors.textTertiary}
+                    label="Eingeladene"
+                    value="Ohne"
+                  />
+                </View>
 
-                {dateOptions.map((d) => {
-                  const active = !customDateSelected && isSameDay(d, selectedDate);
-                  const { top, bottom } = formatDatePill(d);
+                {/* 5 – Extras */}
+                <View style={styles.sectionCard}>
+                  <PickerRow
+                    icon="notifications-outline"
+                    label="Hinweis"
+                    value={eventAlert}
+                    onPress={() => openOptionSheet({
+                      title: 'Hinweis',
+                      options: ALERT_OPTIONS,
+                      current: eventAlert,
+                      onSelect: setEventAlert,
+                    })}
+                  />
+                </View>
+              </>
+            ) : (
+              <>
+                {/* ── ERINNERUNG ── */}
+
+                {/* 1 – Grundinfos */}
+                <View style={styles.sectionCard}>
+                  <TextInput
+                    style={styles.cardTextInput}
+                    value={title}
+                    onChangeText={setTitle}
+                    placeholder="Titel"
+                    placeholderTextColor={colors.textTertiary}
+                    returnKeyType="next"
+                    maxLength={100}
+                    autoFocus={!isEditMode}
+                  />
+                  <Divider />
+                  <TextInput
+                    style={[styles.cardTextInput, styles.cardTextInputMultiline]}
+                    value={reminderNotes}
+                    onChangeText={setReminderNotes}
+                    placeholder="Notizen"
+                    placeholderTextColor={colors.textTertiary}
+                    multiline
+                    maxLength={500}
+                  />
+                  <Divider />
+                  <TextInput
+                    style={styles.cardTextInput}
+                    value={reminderUrl}
+                    onChangeText={setReminderUrl}
+                    placeholder="URL"
+                    placeholderTextColor={colors.textTertiary}
+                    returnKeyType="done"
+                    keyboardType="url"
+                    autoCapitalize="none"
+                    maxLength={500}
+                  />
+                </View>
+
+                {/* 2 – Datum & Uhrzeit */}
+                <View style={styles.sectionCard}>
+                  {/* Datum */}
+                  <TouchableOpacity
+                    style={styles.cardRow}
+                    onPress={() => setDatePickerTarget('reminder')}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="calendar-outline" size={16} color={colors.primary} style={styles.rowIcon} />
+                    <View style={styles.cardLabelStack}>
+                      <Text style={styles.cardLabel}>Datum</Text>
+                      <Text style={styles.cardValueAccent}>{formatRelativeDate(reminderDate)}</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <Divider />
+                  {/* Uhrzeit */}
+                  <View style={styles.cardRow}>
+                    <Ionicons name="time-outline" size={16} color={colors.primary} style={styles.rowIcon} />
+                    <View style={styles.cardLabelStack}>
+                      <Text style={styles.cardLabel}>Uhrzeit</Text>
+                      {hasReminderTime && (
+                        <TouchableOpacity onPress={() => openTimePicker('reminderTime')}>
+                          <Text style={styles.cardValueAccent}>{format(reminderTime, 'HH:mm')}</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    <Switch
+                      value={hasReminderTime}
+                      onValueChange={setHasReminderTime}
+                      trackColor={{ false: colors.border, true: colors.primary }}
+                      ios_backgroundColor={colors.surfaceVariant}
+                    />
+                  </View>
+                  <Divider />
+                  {/* Dringend */}
+                  <View>
+                    <View style={styles.cardRow}>
+                      <Ionicons name="alert-circle-outline" size={16} color={colors.error} style={styles.rowIcon} />
+                      <Text style={styles.cardLabel}>Dringend</Text>
+                      <Switch
+                        value={isUrgent}
+                        onValueChange={setIsUrgent}
+                        trackColor={{ false: colors.border, true: colors.error }}
+                        ios_backgroundColor={colors.surfaceVariant}
+                      />
+                    </View>
+                    {!isUrgent && (
+                      <Text style={styles.cardHint}>
+                        Markiere diese Erinnerung als dringend, um einen Hinweis wiederzugeben.
+                      </Text>
+                    )}
+                  </View>
+                </View>
+
+                {/* 3 – Wiederholen */}
+                <View style={styles.sectionCard}>
+                  <PickerRow
+                    icon="repeat-outline"
+                    label="Wiederholen"
+                    value={reminderRepeat}
+                    onPress={() => openOptionSheet({
+                      title: 'Wiederholen',
+                      options: REPEAT_OPTIONS,
+                      current: reminderRepeat,
+                      onSelect: setReminderRepeat,
+                    })}
+                  />
+                </View>
+
+                {/* 4 – Weitere Optionen */}
+                <View style={styles.sectionCard}>
+                  <NavRow
+                    icon="list-outline"
+                    iconColor={colors.categoryPersonal}
+                    label="Liste"
+                    value="Erinnerungen"
+                  />
+                  <Divider />
+                  <NavRow
+                    icon="information-circle-outline"
+                    iconColor={colors.textTertiary}
+                    label="Details"
+                    value=""
+                  />
+                </View>
+              </>
+            )}
+
+            {/* ── Kategorie & Priorität (shared) ── */}
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionInlineLabel}>KATEGORIE</Text>
+              <View style={styles.pillWrap}>
+                {CATEGORY_META.map(({ key, label, color }) => {
+                  const active = category === key;
                   return (
                     <TouchableOpacity
-                      key={d.toISOString()}
-                      style={[styles.datePill, active && styles.datePillActive]}
-                      onPress={() => { setSelectedDate(d); setCustomDateSelected(false); setShowDatePicker(false); }}
+                      key={key}
+                      style={[
+                        styles.categoryPill,
+                        active
+                          ? { backgroundColor: color + '28', borderColor: color }
+                          : { backgroundColor: colors.surface, borderColor: color + '55' },
+                      ]}
+                      onPress={() => setCategory(key)}
                       activeOpacity={0.75}
                     >
-                      <Text style={[styles.datePillTop, active && styles.datePillTopActive]}>{top}</Text>
-                      <Text style={[styles.datePillBottom, active && styles.datePillBottomActive]}>{bottom}</Text>
+                      <Text style={[styles.categoryPillText, { color: active ? color : color + 'BB' }]}>
+                        {label}
+                      </Text>
                     </TouchableOpacity>
                   );
                 })}
-              </ScrollView>
-            )}
+              </View>
 
-            <View style={styles.separator} />
+              <Divider />
 
-            {/* ── Start time ── */}
-            <TouchableOpacity
-              style={styles.fieldRow}
-              onPress={() => openPicker('start')}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="time-outline" size={18} color={colors.textSecondary} />
-              <Text style={styles.fieldLabel}>Start</Text>
-              <Text style={[styles.fieldValue, pickerMode === 'start' && styles.fieldValueActive]}>
-                {format(startDate, 'h:mm a')}
-              </Text>
-            </TouchableOpacity>
-
-            <View style={styles.separator} />
-
-            {/* ── End time ── */}
-            <TouchableOpacity
-              style={styles.fieldRow}
-              onPress={() => openPicker('end')}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="flag-outline" size={18} color={colors.textSecondary} />
-              <Text style={styles.fieldLabel}>End</Text>
-              <Text style={[styles.fieldValue, pickerMode === 'end' && styles.fieldValueActive]}>
-                {format(endDate, 'h:mm a')}
-              </Text>
-            </TouchableOpacity>
-
-            <View style={styles.separator} />
-
-            {/* ── Duration (wheel picker) ── */}
-            <TouchableOpacity
-              style={styles.fieldRow}
-              onPress={() => openPicker('duration')}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="alarm-outline" size={18} color={colors.textSecondary} />
-              <Text style={styles.fieldLabel}>Duration</Text>
-              <Text style={[styles.fieldValue, pickerMode === 'duration' && styles.fieldValueActive]}>
-                {formatDuration(startDate, endDate)}
-              </Text>
-            </TouchableOpacity>
-
-            <View style={styles.separator} />
-
-            {/* ── Category ── */}
-            <Text style={styles.sectionLabel}>CATEGORY</Text>
-            <View style={styles.pillWrap}>
-              {CATEGORY_META.map(({ key, label, color }) => {
-                const active = category === key;
-                return (
-                  <TouchableOpacity
-                    key={key}
-                    style={[
-                      styles.categoryPill,
-                      active
-                        ? { backgroundColor: color + '28', borderColor: color }
-                        : { backgroundColor: colors.surfaceVariant, borderColor: color + '55' },
-                    ]}
-                    onPress={() => setCategory(key)}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={[styles.categoryPillText, { color: active ? color : color + 'BB' }]}>
-                      {label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+              <Text style={[styles.sectionInlineLabel, { marginTop: spacing.sm }]}>PRIORITÄT</Text>
+              <View style={styles.priorityRow}>
+                {PRIORITY_META.map(({ key, label, color }) => {
+                  const active = priority === key;
+                  return (
+                    <TouchableOpacity
+                      key={key}
+                      style={[
+                        styles.priorityPill,
+                        active
+                          ? { backgroundColor: color + '28', borderColor: color }
+                          : { backgroundColor: colors.surface, borderColor: color + '55' },
+                      ]}
+                      onPress={() => setPriority(key)}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={[styles.priorityPillText, { color: active ? color : color + 'BB' }]}>
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <View style={{ height: spacing.md }} />
             </View>
 
-            {/* ── Priority ── */}
-            <Text style={[styles.sectionLabel, { marginTop: spacing.lg }]}>PRIORITY</Text>
-            <View style={styles.priorityRow}>
-              {PRIORITY_META.map(({ key, label, color }) => {
-                const active = priority === key;
-                return (
-                  <TouchableOpacity
-                    key={key}
-                    style={[
-                      styles.priorityPill,
-                      active
-                        ? { backgroundColor: color + '28', borderColor: color }
-                        : { backgroundColor: colors.surfaceVariant, borderColor: color + '55' },
-                    ]}
-                    onPress={() => setPriority(key)}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={[styles.priorityPillText, { color: active ? color : color + 'BB' }]}>
-                      {label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {/* ── Notes ── */}
-            <Text style={[styles.sectionLabel, { marginTop: spacing.lg }]}>NOTES</Text>
-            <TextInput
-              style={styles.notesInput}
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="Add notes…"
-              placeholderTextColor={colors.textTertiary}
-              multiline
-              maxLength={500}
-            />
-
-            {/* ── Mark Complete ── */}
+            {/* ── Als erledigt markieren ── */}
             <TouchableOpacity
               style={[styles.markCompleteBtn, !canSave && styles.btnDisabled]}
               onPress={() => handleSave(true)}
@@ -478,10 +697,10 @@ export const NewTaskModal: React.FC<Props> = ({
               disabled={!canSave}
             >
               <Text style={styles.markCompleteIcon}>✓</Text>
-              <Text style={styles.markCompleteText}>Mark Complete</Text>
+              <Text style={styles.markCompleteText}>Als erledigt markieren</Text>
             </TouchableOpacity>
 
-            {/* ── Bottom row ── */}
+            {/* ── Bottom Row ── */}
             <View style={styles.bottomRow}>
               <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} activeOpacity={0.8}>
                 <Ionicons name="trash-outline" size={20} color={colors.error} />
@@ -493,7 +712,7 @@ export const NewTaskModal: React.FC<Props> = ({
                 disabled={!canSave}
               >
                 <Text style={[styles.saveBtnText, !canSave && styles.saveBtnTextDisabled]}>
-                  Save Changes
+                  {isEditMode ? 'Speichern' : 'Hinzufügen'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -503,19 +722,19 @@ export const NewTaskModal: React.FC<Props> = ({
         </TouchableOpacity>
       </KeyboardAvoidingView>
 
-      {/* ── Custom date picker overlay (full-calendar graphical style) ── */}
-      {showCustomDatePicker && (
+      {/* ── Custom Calendar Sheet ── */}
+      {datePickerTarget !== null && (
         <View style={styles.pickerOverlay}>
           <TouchableOpacity
             style={styles.pickerBackdrop}
             activeOpacity={1}
-            onPress={() => setShowCustomDatePicker(false)}
+            onPress={() => setDatePickerTarget(null)}
           />
           <View style={styles.pickerSheet}>
             <View style={styles.pickerToolbar}>
               <TouchableOpacity
                 style={styles.pickerToolbarBtn}
-                onPress={() => setShowCustomDatePicker(false)}
+                onPress={() => setDatePickerTarget(null)}
               >
                 <Text style={styles.pickerCancel}>Abbrechen</Text>
               </TouchableOpacity>
@@ -523,54 +742,98 @@ export const NewTaskModal: React.FC<Props> = ({
               <View style={styles.pickerToolbarBtn} />
             </View>
             <CustomCalendarView
-              selectedDate={selectedDate}
-              onSelectDate={(date) => {
-                setSelectedDate(date);
-                setCustomDateSelected(true);
-                setShowCustomDatePicker(false);
-                setShowDatePicker(false);
-              }}
+              selectedDate={
+                datePickerTarget === 'start'    ? startDate  :
+                datePickerTarget === 'end'      ? endDate    :
+                                                  reminderDate
+              }
+              onSelectDate={handleDateSelect}
             />
           </View>
         </View>
       )}
 
-      {/* ── Native wheel picker overlay (start or end) ── */}
-      {pickerMode !== null && (
+      {/* ── Time Picker Sheet ── */}
+      {timePickerMode !== null && (
         <View style={styles.pickerOverlay}>
           <TouchableOpacity
             style={styles.pickerBackdrop}
             activeOpacity={1}
-            onPress={() => setPickerMode(null)}
+            onPress={() => setTimePickerMode(null)}
           />
           <View style={styles.pickerSheet}>
             <View style={styles.pickerToolbar}>
               <TouchableOpacity
                 style={styles.pickerToolbarBtn}
-                onPress={() => setPickerMode(null)}
+                onPress={() => setTimePickerMode(null)}
               >
                 <Text style={styles.pickerCancel}>Abbrechen</Text>
               </TouchableOpacity>
-
-              <Text style={styles.pickerTitle}>{pickerTitle}</Text>
-
+              <Text style={styles.pickerTitle}>
+                {timePickerMode === 'startTime' ? 'Startzeit' :
+                 timePickerMode === 'endTime'   ? 'Endzeit'   :
+                                                  'Uhrzeit'}
+              </Text>
               <TouchableOpacity
                 style={styles.pickerToolbarBtn}
-                onPress={handlePickerConfirm}
+                onPress={handleTimePickerConfirm}
               >
                 <Text style={styles.pickerDone}>Fertig</Text>
               </TouchableOpacity>
             </View>
-
             <DateTimePicker
               value={pickerTime}
-              mode={pickerMode === 'duration' ? 'countdown' : 'time'}
+              mode="time"
               display="spinner"
-              onChange={handlePickerChange}
+              onChange={handleTimePickerChange}
               textColor={colors.textPrimary}
               style={styles.nativePicker}
               minuteInterval={5}
             />
+          </View>
+        </View>
+      )}
+
+      {/* ── Option Picker Sheet ── */}
+      {optionSheet !== null && (
+        <View style={styles.pickerOverlay}>
+          <TouchableOpacity
+            style={styles.pickerBackdrop}
+            activeOpacity={1}
+            onPress={() => setOptionSheet(null)}
+          />
+          <View style={[styles.pickerSheet, styles.optionPickerSheet]}>
+            <View style={styles.pickerToolbar}>
+              <TouchableOpacity
+                style={styles.pickerToolbarBtn}
+                onPress={() => setOptionSheet(null)}
+              >
+                <Text style={styles.pickerCancel}>Abbrechen</Text>
+              </TouchableOpacity>
+              <Text style={styles.pickerTitle}>{optionSheet.title}</Text>
+              <View style={styles.pickerToolbarBtn} />
+            </View>
+            <ScrollView bounces={false}>
+              {optionSheet.options.map((opt) => (
+                <TouchableOpacity
+                  key={opt}
+                  style={styles.optionRow}
+                  onPress={() => { optionSheet.onSelect(opt); setOptionSheet(null); }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[
+                    styles.optionText,
+                    opt === optionSheet.current && styles.optionTextActive,
+                  ]}>
+                    {opt}
+                  </Text>
+                  {opt === optionSheet.current && (
+                    <Ionicons name="checkmark" size={18} color={colors.primary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+              <View style={{ height: 34 }} />
+            </ScrollView>
           </View>
         </View>
       )}
@@ -581,6 +844,7 @@ export const NewTaskModal: React.FC<Props> = ({
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  // Modal shell
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.6)',
@@ -590,12 +854,11 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.background,
     borderTopLeftRadius: borderRadius.xlarge,
     borderTopRightRadius: borderRadius.xlarge,
-    paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
-    maxHeight: '92%',
+    maxHeight: '95%',
   },
   handle: {
     width: 40,
@@ -603,128 +866,170 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.round,
     backgroundColor: colors.border,
     alignSelf: 'center',
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
-  sheetTitle: {
-    fontSize: typography.h2,
-    fontWeight: typography.bold as any,
-    color: colors.textPrimary,
-    marginBottom: spacing.md,
-  },
-  titleInput: {
-    fontSize: typography.h3,
-    color: colors.textPrimary,
-    fontWeight: typography.medium as any,
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    marginBottom: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-
-  // Field rows
-  fieldRow: {
-    flexDirection: 'row',
+  headerBtn: {
+    width: 40,
+    height: 36,
     alignItems: 'center',
-    paddingVertical: spacing.md,
-    gap: spacing.md,
+    justifyContent: 'center',
   },
-  fieldLabel: {
-    flex: 1,
+  headerTitle: {
     fontSize: typography.body,
-    color: colors.textSecondary,
-  },
-  fieldValue: {
-    fontSize: typography.body,
-    color: colors.textPrimary,
-    fontWeight: typography.medium as any,
-  },
-  fieldValueActive: {
-    color: colors.primary,
-  },
-  separator: {
-    height: 1,
-    backgroundColor: colors.border,
-  },
-
-  // Inline pickers
-  inlinePicker: {
-    paddingVertical: spacing.sm,
-  },
-  pillRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    paddingVertical: spacing.sm,
-  },
-
-  // Date pills
-  datePill: {
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: spacing.sm,
-    borderRadius: 20,
-    backgroundColor: colors.surfaceVariant,
-    borderWidth: 1,
-    borderColor: colors.border,
-    minWidth: 52,
-  },
-  datePillActive: {
-    backgroundColor: colors.primary + '22',
-    borderColor: colors.primary,
-  },
-  datePillTop: {
-    fontSize: 10,
     fontWeight: typography.semibold as any,
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-  },
-  datePillTopActive: { color: colors.primary },
-  datePillBottom: {
-    fontSize: typography.body,
-    fontWeight: typography.bold as any,
     color: colors.textPrimary,
-    marginTop: 2,
   },
-  datePillBottomActive: { color: colors.primary },
 
-  // Generic pills (duration)
-  pill: {
-    paddingHorizontal: 14,
-    paddingVertical: spacing.sm,
-    borderRadius: 20,
+  // Segment control
+  segmentContainer: {
+    flexDirection: 'row',
     backgroundColor: colors.surfaceVariant,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderRadius: borderRadius.medium,
+    margin: spacing.md,
+    padding: 3,
   },
-  pillActive: {
-    backgroundColor: colors.primary + '22',
-    borderColor: colors.primary,
+  segmentOption: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.small,
+    alignItems: 'center',
   },
-  pillText: {
+  segmentOptionActive: {
+    backgroundColor: colors.surface,
+  },
+  segmentText: {
     fontSize: typography.caption,
-    color: colors.textSecondary,
     fontWeight: typography.medium as any,
+    color: colors.textSecondary,
   },
-  pillTextActive: {
-    color: colors.primary,
-    fontWeight: typography.bold as any,
+  segmentTextActive: {
+    color: colors.textPrimary,
+    fontWeight: typography.semibold as any,
   },
 
-  // Section labels
-  sectionLabel: {
+  // Scroll
+  scrollContent: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
+  },
+
+  // Section cards
+  sectionCard: {
+    backgroundColor: colors.surfaceVariant,
+    borderRadius: borderRadius.large,
+    marginBottom: spacing.md,
+    overflow: 'hidden',
+  },
+  sectionInlineLabel: {
     fontSize: typography.tiny,
     fontWeight: typography.semibold as any,
     color: colors.textTertiary,
     letterSpacing: 1,
     textTransform: 'uppercase',
-    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginLeft: spacing.md,
   },
 
-  // Category pills
+  // Card rows
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 13,
+    minHeight: 46,
+  },
+  cardLabel: {
+    flex: 1,
+    fontSize: typography.body,
+    color: colors.textPrimary,
+  },
+  cardLabelStack: {
+    flex: 1,
+    gap: 2,
+  },
+  cardValue: {
+    fontSize: typography.body,
+    color: colors.textSecondary,
+    marginRight: spacing.xs,
+  },
+  cardValueAccent: {
+    fontSize: typography.caption,
+    color: colors.primary,
+    fontWeight: typography.medium as any,
+  },
+  cardHint: {
+    fontSize: typography.tiny,
+    color: colors.textTertiary,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+    lineHeight: 17,
+  },
+  cardTextInput: {
+    fontSize: typography.body,
+    color: colors.textPrimary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 13,
+    minHeight: 46,
+  },
+  cardTextInputInline: {
+    flex: 1,
+    fontSize: typography.body,
+    color: colors.textPrimary,
+    paddingVertical: 0,
+  },
+  cardTextInputMultiline: {
+    minHeight: 72,
+    textAlignVertical: 'top',
+  },
+  rowIcon: {
+    marginRight: spacing.sm,
+  },
+  rowRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  // Date/time pill buttons
+  dateTimeButtons: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  dateTimeBtn: {
+    backgroundColor: colors.primary + '22',
+    borderRadius: borderRadius.medium,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+  },
+  dateTimeBtnText: {
+    fontSize: typography.caption,
+    color: colors.primary,
+    fontWeight: typography.medium as any,
+  },
+
+  // Category & Priority
   pillWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
   },
   categoryPill: {
     paddingHorizontal: 14,
@@ -736,9 +1041,12 @@ const styles = StyleSheet.create({
     fontSize: typography.caption,
     fontWeight: typography.semibold as any,
   },
-
-  // Priority pills
-  priorityRow: { flexDirection: 'row', gap: spacing.sm },
+  priorityRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+  },
   priorityPill: {
     flex: 1,
     paddingHorizontal: 14,
@@ -752,28 +1060,13 @@ const styles = StyleSheet.create({
     fontWeight: typography.semibold as any,
   },
 
-  // Notes
-  notesInput: {
-    minHeight: 80,
-    backgroundColor: colors.surfaceVariant,
-    borderRadius: borderRadius.medium,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    fontSize: typography.body,
-    color: colors.textPrimary,
-    lineHeight: 22,
-    textAlignVertical: 'top',
-  },
-
-  // Mark Complete
+  // Mark complete
   markCompleteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    marginTop: spacing.lg,
+    marginBottom: spacing.md,
     paddingVertical: spacing.md,
     borderRadius: borderRadius.large,
     backgroundColor: '#1A3D2E',
@@ -790,9 +1083,10 @@ const styles = StyleSheet.create({
     fontWeight: typography.semibold as any,
     color: colors.success,
   },
+  btnDisabled: { opacity: 0.4 },
 
   // Bottom row
-  bottomRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  bottomRow: { flexDirection: 'row', gap: spacing.sm },
   deleteBtn: {
     width: 50,
     height: 50,
@@ -827,9 +1121,8 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   saveBtnTextDisabled: { color: colors.textTertiary },
-  btnDisabled: { opacity: 0.4 },
 
-  // Native wheel picker overlay
+  // Picker overlays (shared shell)
   pickerOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-end',
@@ -845,6 +1138,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: borderRadius.xlarge,
     paddingBottom: 34,
   },
+  optionPickerSheet: {
+    maxHeight: '60%',
+  },
   pickerToolbar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -858,6 +1154,7 @@ const styles = StyleSheet.create({
   pickerToolbarBtn: {
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.sm,
+    minWidth: 80,
   },
   pickerTitle: {
     fontSize: typography.body,
@@ -872,9 +1169,29 @@ const styles = StyleSheet.create({
     fontSize: typography.body,
     fontWeight: typography.bold as any,
     color: colors.primary,
+    textAlign: 'right',
   },
   nativePicker: {
     width: '100%',
     height: 216,
+  },
+
+  // Option sheet rows
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  optionText: {
+    fontSize: typography.body,
+    color: colors.textPrimary,
+  },
+  optionTextActive: {
+    color: colors.primary,
+    fontWeight: typography.semibold as any,
   },
 });

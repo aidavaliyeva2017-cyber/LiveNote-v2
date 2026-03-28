@@ -228,6 +228,9 @@ export const CalendarView: React.FC = () => {
     const pxPerMinute = hourHeight / 60;
     const gutterWidth = 56;
     const gap = 8;
+    // Visual offset from the top of each hourRow to where the hourLine actually renders:
+    // hourRow.paddingTop(10) + hourLine.marginTop(8) = 18px
+    const lineOffset = 18;
 
     const todays = dayEvents
       .slice()
@@ -290,7 +293,7 @@ export const CalendarView: React.FC = () => {
         const endMinutes = evt.end.getHours() * 60 + evt.end.getMinutes();
         const clampStart = Math.max(startHour * 60, startMinutes);
         const clampEnd = Math.min(endHour * 60, Math.max(clampStart + 10, endMinutes));
-        const top = (clampStart - startHour * 60) * pxPerMinute;
+        const top = (clampStart - startHour * 60) * pxPerMinute + lineOffset;
         const height = Math.max(28, (clampEnd - clampStart) * pxPerMinute);
         placed.push({
           evt,
@@ -317,12 +320,13 @@ export const CalendarView: React.FC = () => {
     const now = new Date();
     const isToday = formatDateKey(now) === formatDateKey(selectedDate);
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    const nowY = (nowMinutes - startHour * 60) * pxPerMinute;
+    const nowY = (nowMinutes - startHour * 60) * pxPerMinute + lineOffset;
 
     return {
       startHour,
       endHour,
       hourHeight,
+      lineOffset,
       gutterWidth,
       contentHeight,
       blocks,
@@ -612,7 +616,9 @@ export const CalendarView: React.FC = () => {
           const label = format(new Date(0, 0, 0, hour, 0), 'ha').toLowerCase();
           const isNowHour =
             dayTimeline.showNow &&
-            Math.floor((dayTimeline.nowY ?? 0) / dayTimeline.hourHeight) === i;
+            Math.floor(
+              Math.max(0, (dayTimeline.nowY ?? 0) - dayTimeline.lineOffset) / dayTimeline.hourHeight
+            ) === i;
 
           return (
             <View key={hour} style={[styles.hourRow, { top, height: dayTimeline.hourHeight }]}>
@@ -943,11 +949,6 @@ export const CalendarView: React.FC = () => {
         {mode === 'week' ? renderWeek() : null}
       </View>
 
-      {!isViewingToday && section === 'daily' && (
-        <TouchableOpacity style={[styles.todayPill, { borderColor: c.primary }]} onPress={goToday}>
-          <Text style={[styles.todayPillText, { color: c.primary }]}>Today</Text>
-        </TouchableOpacity>
-      )}
       {section === 'daily' && (
         <TouchableOpacity
           style={[styles.fab, { backgroundColor: c.primary, shadowColor: c.primary }]}
@@ -1324,26 +1325,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 28,
     lineHeight: 32,
-  },
-
-  // Today pill
-  todayPill: {
-    position: 'absolute',
-    bottom: spacing.xl + 64,
-    alignSelf: 'center',
-    left: '50%',
-    marginLeft: -32,
-    backgroundColor: colors.surfaceVariant,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-    borderRadius: borderRadius.large,
-  },
-  todayPillText: {
-    color: colors.primary,
-    fontSize: typography.caption,
-    fontWeight: typography.semibold,
   },
 
   // Daily / School section switcher
