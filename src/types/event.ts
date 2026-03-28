@@ -26,5 +26,10 @@ export interface CalendarEvent {
   category: EventCategory;
   priority: EventPriority;
   completed?: boolean;
+  eventType?: 'event' | 'reminder';
+  travelTime?: string;
+  repeat?: string;
+  alert?: string;
+  url?: string;
 }
 

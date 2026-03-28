@@ -145,15 +145,34 @@ export const NewTaskModal: React.FC<Props> = ({
     const base = startOfDay(defaultDate ?? new Date());
 
     if (event) {
+      const mode: AppMode = event.eventType === 'reminder' ? 'reminder' : 'event';
+      setAppMode(mode);
       setTitle(event.title);
-      setStartDate(startOfDay(event.start));
-      setStartTime(event.start);
-      setEndDate(startOfDay(event.end));
-      setEndTime(event.end);
       setCategory(event.category);
       setPriority(event.priority);
-      setLocation(event.description ?? '');
+
+      if (mode === 'event') {
+        setStartDate(startOfDay(event.start));
+        setStartTime(event.start);
+        setEndDate(startOfDay(event.end));
+        setEndTime(event.end);
+        setLocation(event.description ?? '');
+        setAllDay(event.allDay ?? false);
+        setTravelTime(event.travelTime ?? 'Ohne');
+        setRepeat(event.repeat ?? 'Nie');
+        setEventAlert(event.alert ?? 'Ohne');
+      } else {
+        setReminderDate(startOfDay(event.start));
+        const hasTime = event.start.getHours() !== 0 || event.start.getMinutes() !== 0;
+        setHasReminderTime(hasTime);
+        if (hasTime) setReminderTime(event.start);
+        setReminderNotes(event.description ?? '');
+        setReminderUrl(event.url ?? '');
+        setIsUrgent(event.priority === 'high');
+        setReminderRepeat(event.repeat ?? 'Nie');
+      }
     } else {
+      setAppMode('event');
       setTitle('');
       setLocation('');
       setAllDay(false);
@@ -174,7 +193,6 @@ export const NewTaskModal: React.FC<Props> = ({
       setCategory('work');
       setPriority('medium');
     }
-    setAppMode('event');
     setDatePickerTarget(null);
     setTimePickerMode(null);
     setOptionSheet(null);
@@ -210,15 +228,23 @@ export const NewTaskModal: React.FC<Props> = ({
       evEnd = evStart;
     }
 
+    const activeRepeat = appMode === 'event' ? repeat : reminderRepeat;
+
     const payload = {
       title:       trimmedTitle,
       start:       evStart,
       end:         evEnd,
       category,
-      priority,
+      priority:    appMode === 'reminder' && isUrgent ? ('high' as EventPriority) : priority,
       description: appMode === 'event'
         ? (location.trim() || undefined)
         : (reminderNotes.trim() || undefined),
+      allDay:      appMode === 'event' ? allDay : false,
+      eventType:   appMode as 'event' | 'reminder',
+      travelTime:  appMode === 'event' && travelTime !== 'Ohne' ? travelTime : undefined,
+      repeat:      activeRepeat !== 'Nie' ? activeRepeat : undefined,
+      alert:       appMode === 'event' && eventAlert !== 'Ohne' ? eventAlert : undefined,
+      url:         appMode === 'reminder' && reminderUrl.trim() ? reminderUrl.trim() : undefined,
       ...(markComplete ? { completed: true } : {}),
     };
 
@@ -231,7 +257,8 @@ export const NewTaskModal: React.FC<Props> = ({
   }, [
     title, appMode, allDay, startDate, startTime, endDate, endTime,
     hasReminderTime, reminderDate, reminderTime, location, reminderNotes,
-    category, priority, isEditMode, event, onSave, addEvent, handleClose,
+    category, priority, isUrgent, travelTime, repeat, reminderRepeat,
+    eventAlert, reminderUrl, isEditMode, event, onSave, addEvent, handleClose,
   ]);
 
   const handleDelete = useCallback(() => {
