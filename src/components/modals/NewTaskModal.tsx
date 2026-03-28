@@ -32,7 +32,7 @@ interface Props {
 
 type AppMode        = 'event' | 'reminder';
 type TimePickerMode = 'startTime' | 'endTime' | 'reminderTime' | null;
-type DatePickerTarget = 'start' | 'end' | 'reminder' | null;
+type DatePickerTarget = 'start' | 'end' | 'reminder' | 'repeatEnd' | 'reminderRepeatEnd' | null;
 
 interface OptionSheetConfig {
   title: string;
@@ -58,8 +58,9 @@ const PRIORITY_META: { key: EventPriority; label: string; color: string }[] = [
   { key: 'low',    label: 'Low',    color: colors.info },
 ];
 
-const TRAVEL_TIME_OPTIONS = ['Ohne', '5 Min', '10 Min', '15 Min', '30 Min', '1 Std', '2 Std'];
-const REPEAT_OPTIONS      = ['Nie', 'Täglich', 'Wöchentlich', 'Alle 2 Wochen', 'Monatlich', 'Jährlich'];
+const TRAVEL_TIME_OPTIONS    = ['Ohne', '5 Min', '10 Min', '15 Min', '30 Min', '1 Std', '2 Std'];
+const REPEAT_OPTIONS         = ['Nie', 'Täglich', 'Wöchentlich', 'Alle 2 Wochen', 'Monatlich', 'Jährlich', 'Benutzerdefiniert'];
+const CUSTOM_INTERVAL_OPTIONS = ['Jeden Tag', 'Jede Woche', 'Alle 2 Wochen', 'Jeden Monat', 'Jedes Jahr'];
 const ALERT_OPTIONS       = [
   'Ohne', 'Zum Zeitpunkt', '5 Min vorher', '10 Min vorher',
   '15 Min vorher', '30 Min vorher', '1 Std vorher', '2 Std vorher', '1 Tag vorher',
@@ -132,6 +133,10 @@ export const NewTaskModal: React.FC<Props> = ({
   const [reminderTime, setReminderTime]       = useState<Date>(makeTime(9, 0));
   const [isUrgent, setIsUrgent]               = useState(false);
   const [reminderRepeat, setReminderRepeat]   = useState('Nie');
+  const [repeatEndDate, setRepeatEndDate]                 = useState<Date | null>(null);
+  const [customInterval, setCustomInterval]               = useState('Jeden Tag');
+  const [reminderRepeatEndDate, setReminderRepeatEndDate] = useState<Date | null>(null);
+  const [reminderCustomInterval, setReminderCustomInterval] = useState('Jeden Tag');
 
   // ── Picker UI ──
   const [datePickerTarget, setDatePickerTarget] = useState<DatePickerTarget>(null);
@@ -160,6 +165,8 @@ export const NewTaskModal: React.FC<Props> = ({
         setAllDay(event.allDay ?? false);
         setTravelTime(event.travelTime ?? 'Ohne');
         setRepeat(event.repeat ?? 'Nie');
+        setRepeatEndDate(event.repeatEndDate ?? null);
+        setCustomInterval(event.customRepeatInterval ?? 'Jeden Tag');
         setEventAlert(event.alert ?? 'Ohne');
       } else {
         setReminderDate(startOfDay(event.start));
@@ -170,6 +177,8 @@ export const NewTaskModal: React.FC<Props> = ({
         setReminderUrl(event.url ?? '');
         setIsUrgent(event.priority === 'high');
         setReminderRepeat(event.repeat ?? 'Nie');
+        setReminderRepeatEndDate(event.repeatEndDate ?? null);
+        setReminderCustomInterval(event.customRepeatInterval ?? 'Jeden Tag');
       }
     } else {
       setAppMode('event');
@@ -190,6 +199,10 @@ export const NewTaskModal: React.FC<Props> = ({
       setReminderTime(makeTime(9, 0));
       setIsUrgent(false);
       setReminderRepeat('Nie');
+      setReminderRepeatEndDate(null);
+      setReminderCustomInterval('Jeden Tag');
+      setRepeatEndDate(null);
+      setCustomInterval('Jeden Tag');
       setCategory('work');
       setPriority('medium');
     }
@@ -228,23 +241,27 @@ export const NewTaskModal: React.FC<Props> = ({
       evEnd = evStart;
     }
 
-    const activeRepeat = appMode === 'event' ? repeat : reminderRepeat;
+    const activeRepeat         = appMode === 'event' ? repeat               : reminderRepeat;
+    const activeRepeatEndDate  = appMode === 'event' ? repeatEndDate         : reminderRepeatEndDate;
+    const activeCustomInterval = appMode === 'event' ? customInterval        : reminderCustomInterval;
 
     const payload = {
-      title:       trimmedTitle,
-      start:       evStart,
-      end:         evEnd,
+      title:                trimmedTitle,
+      start:                evStart,
+      end:                  evEnd,
       category,
-      priority:    appMode === 'reminder' && isUrgent ? ('high' as EventPriority) : priority,
-      description: appMode === 'event'
-        ? (location.trim() || undefined)
-        : (reminderNotes.trim() || undefined),
-      allDay:      appMode === 'event' ? allDay : false,
-      eventType:   appMode as 'event' | 'reminder',
-      travelTime:  appMode === 'event' && travelTime !== 'Ohne' ? travelTime : undefined,
-      repeat:      activeRepeat !== 'Nie' ? activeRepeat : undefined,
-      alert:       appMode === 'event' && eventAlert !== 'Ohne' ? eventAlert : undefined,
-      url:         appMode === 'reminder' && reminderUrl.trim() ? reminderUrl.trim() : undefined,
+      priority:             appMode === 'reminder' && isUrgent ? ('high' as EventPriority) : priority,
+      description:          appMode === 'event'
+                              ? (location.trim() || undefined)
+                              : (reminderNotes.trim() || undefined),
+      allDay:               appMode === 'event' ? allDay : false,
+      eventType:            appMode as 'event' | 'reminder',
+      travelTime:           appMode === 'event' && travelTime !== 'Ohne' ? travelTime : undefined,
+      repeat:               activeRepeat !== 'Nie' ? activeRepeat : undefined,
+      repeatEndDate:        activeRepeat !== 'Nie' ? (activeRepeatEndDate ?? undefined) : undefined,
+      customRepeatInterval: activeRepeat === 'Benutzerdefiniert' ? activeCustomInterval : undefined,
+      alert:                appMode === 'event' && eventAlert !== 'Ohne' ? eventAlert : undefined,
+      url:                  appMode === 'reminder' && reminderUrl.trim() ? reminderUrl.trim() : undefined,
       ...(markComplete ? { completed: true } : {}),
     };
 
@@ -258,6 +275,7 @@ export const NewTaskModal: React.FC<Props> = ({
     title, appMode, allDay, startDate, startTime, endDate, endTime,
     hasReminderTime, reminderDate, reminderTime, location, reminderNotes,
     category, priority, isUrgent, travelTime, repeat, reminderRepeat,
+    repeatEndDate, reminderRepeatEndDate, customInterval, reminderCustomInterval,
     eventAlert, reminderUrl, isEditMode, event, onSave, addEvent, handleClose,
   ]);
 
@@ -288,9 +306,11 @@ export const NewTaskModal: React.FC<Props> = ({
   }, [timePickerMode, pickerTime]);
 
   const handleDateSelect = useCallback((date: Date) => {
-    if (datePickerTarget === 'start')        setStartDate(date);
-    else if (datePickerTarget === 'end')     setEndDate(date);
-    else if (datePickerTarget === 'reminder') setReminderDate(date);
+    if      (datePickerTarget === 'start')              setStartDate(date);
+    else if (datePickerTarget === 'end')                setEndDate(date);
+    else if (datePickerTarget === 'reminder')           setReminderDate(date);
+    else if (datePickerTarget === 'repeatEnd')          setRepeatEndDate(date);
+    else if (datePickerTarget === 'reminderRepeatEnd')  setReminderRepeatEndDate(date);
     setDatePickerTarget(null);
   }, [datePickerTarget]);
 
@@ -500,6 +520,50 @@ export const NewTaskModal: React.FC<Props> = ({
                       onSelect: setRepeat,
                     })}
                   />
+                  {repeat === 'Benutzerdefiniert' && (
+                    <>
+                      <Divider />
+                      <PickerRow
+                        icon="repeat-outline"
+                        label="Intervall"
+                        value={customInterval}
+                        onPress={() => openOptionSheet({
+                          title: 'Intervall',
+                          options: CUSTOM_INTERVAL_OPTIONS,
+                          current: customInterval,
+                          onSelect: setCustomInterval,
+                        })}
+                      />
+                    </>
+                  )}
+                  {repeat !== 'Nie' && (
+                    <>
+                      <Divider />
+                      <TouchableOpacity
+                        style={styles.cardRow}
+                        onPress={() => setDatePickerTarget('repeatEnd')}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="calendar-outline" size={16} color={colors.textTertiary} style={styles.rowIcon} />
+                        <Text style={styles.cardLabel}>Endet am</Text>
+                        <View style={styles.rowRight}>
+                          {repeatEndDate ? (
+                            <>
+                              <Text style={[styles.dateTimeBtnText, { marginRight: spacing.xs }]}>
+                                {formatRelativeDate(repeatEndDate)}
+                              </Text>
+                              <TouchableOpacity onPress={() => setRepeatEndDate(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                                <Ionicons name="close-circle" size={16} color={colors.textTertiary} />
+                              </TouchableOpacity>
+                            </>
+                          ) : (
+                            <Text style={styles.cardValue}>Kein Ende</Text>
+                          )}
+                          <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} style={{ marginLeft: spacing.xs }} />
+                        </View>
+                      </TouchableOpacity>
+                    </>
+                  )}
                 </View>
 
                 {/* 4 – Kalender & Eingeladene */}
@@ -641,6 +705,50 @@ export const NewTaskModal: React.FC<Props> = ({
                       onSelect: setReminderRepeat,
                     })}
                   />
+                  {reminderRepeat === 'Benutzerdefiniert' && (
+                    <>
+                      <Divider />
+                      <PickerRow
+                        icon="repeat-outline"
+                        label="Intervall"
+                        value={reminderCustomInterval}
+                        onPress={() => openOptionSheet({
+                          title: 'Intervall',
+                          options: CUSTOM_INTERVAL_OPTIONS,
+                          current: reminderCustomInterval,
+                          onSelect: setReminderCustomInterval,
+                        })}
+                      />
+                    </>
+                  )}
+                  {reminderRepeat !== 'Nie' && (
+                    <>
+                      <Divider />
+                      <TouchableOpacity
+                        style={styles.cardRow}
+                        onPress={() => setDatePickerTarget('reminderRepeatEnd')}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="calendar-outline" size={16} color={colors.textTertiary} style={styles.rowIcon} />
+                        <Text style={styles.cardLabel}>Endet am</Text>
+                        <View style={styles.rowRight}>
+                          {reminderRepeatEndDate ? (
+                            <>
+                              <Text style={[styles.dateTimeBtnText, { marginRight: spacing.xs }]}>
+                                {formatRelativeDate(reminderRepeatEndDate)}
+                              </Text>
+                              <TouchableOpacity onPress={() => setReminderRepeatEndDate(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                                <Ionicons name="close-circle" size={16} color={colors.textTertiary} />
+                              </TouchableOpacity>
+                            </>
+                          ) : (
+                            <Text style={styles.cardValue}>Kein Ende</Text>
+                          )}
+                          <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} style={{ marginLeft: spacing.xs }} />
+                        </View>
+                      </TouchableOpacity>
+                    </>
+                  )}
                 </View>
 
                 {/* 4 – Weitere Optionen */}
@@ -770,9 +878,11 @@ export const NewTaskModal: React.FC<Props> = ({
             </View>
             <CustomCalendarView
               selectedDate={
-                datePickerTarget === 'start'    ? startDate  :
-                datePickerTarget === 'end'      ? endDate    :
-                                                  reminderDate
+                datePickerTarget === 'start'             ? startDate :
+                datePickerTarget === 'end'               ? endDate   :
+                datePickerTarget === 'repeatEnd'         ? (repeatEndDate ?? startOfDay(new Date())) :
+                datePickerTarget === 'reminderRepeatEnd' ? (reminderRepeatEndDate ?? startOfDay(new Date())) :
+                                                           reminderDate
               }
               onSelectDate={handleDateSelect}
             />

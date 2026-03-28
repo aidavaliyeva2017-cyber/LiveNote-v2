@@ -25,7 +25,7 @@ const EventsContext = createContext<EventsContextValue | undefined>(undefined);
 // Columns selected in every query
 const SELECT_COLS =
   'id, title, description, start_date, end_date, all_day, category, priority, ' +
-  'completed, event_type, travel_time, repeat, alert, url';
+  'completed, event_type, travel_time, repeat, repeat_end_date, custom_repeat_interval, alert, url';
 
 // ── DB row → CalendarEvent ────────────────────────────────────────────────────
 function rowToEvent(row: any): CalendarEvent {
@@ -40,10 +40,14 @@ function rowToEvent(row: any): CalendarEvent {
     priority:    (row.priority    as EventPriority)  ?? 'medium',
     completed:   row.completed    ?? false,
     eventType:   (row.event_type  as 'event' | 'reminder') ?? 'event',
-    travelTime:  row.travel_time  ?? undefined,
-    repeat:      row.repeat       ?? undefined,
-    alert:       row.alert        ?? undefined,
-    url:         row.url          ?? undefined,
+    travelTime:           row.travel_time           ?? undefined,
+    repeat:               row.repeat                ?? undefined,
+    repeatEndDate:        row.repeat_end_date
+                            ? new Date(row.repeat_end_date)
+                            : undefined,
+    customRepeatInterval: row.custom_repeat_interval ?? undefined,
+    alert:                row.alert                 ?? undefined,
+    url:                  row.url                   ?? undefined,
   };
 }
 
@@ -60,10 +64,12 @@ function eventToRow(event: Omit<CalendarEvent, 'id'>, userId: string) {
     priority:    event.priority,
     completed:   event.completed   ?? false,
     event_type:  event.eventType   ?? 'event',
-    travel_time: event.travelTime  ?? null,
-    repeat:      event.repeat      ?? null,
-    alert:       event.alert       ?? null,
-    url:         event.url         ?? null,
+    travel_time:            event.travelTime           ?? null,
+    repeat:                 event.repeat               ?? null,
+    repeat_end_date:        event.repeatEndDate?.toISOString() ?? null,
+    custom_repeat_interval: event.customRepeatInterval ?? null,
+    alert:                  event.alert                ?? null,
+    url:                    event.url                  ?? null,
   };
 }
 
@@ -120,10 +126,12 @@ export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (patch.priority    !== undefined) dbPatch.priority    = patch.priority;
     if (patch.completed   !== undefined) dbPatch.completed   = patch.completed;
     if (patch.eventType   !== undefined) dbPatch.event_type  = patch.eventType;
-    if (patch.travelTime  !== undefined) dbPatch.travel_time = patch.travelTime  ?? null;
-    if (patch.repeat      !== undefined) dbPatch.repeat      = patch.repeat      ?? null;
-    if (patch.alert       !== undefined) dbPatch.alert       = patch.alert       ?? null;
-    if (patch.url         !== undefined) dbPatch.url         = patch.url         ?? null;
+    if (patch.travelTime           !== undefined) dbPatch.travel_time            = patch.travelTime           ?? null;
+    if (patch.repeat               !== undefined) dbPatch.repeat                 = patch.repeat               ?? null;
+    if (patch.repeatEndDate        !== undefined) dbPatch.repeat_end_date        = patch.repeatEndDate?.toISOString() ?? null;
+    if (patch.customRepeatInterval !== undefined) dbPatch.custom_repeat_interval = patch.customRepeatInterval  ?? null;
+    if (patch.alert                !== undefined) dbPatch.alert                  = patch.alert                ?? null;
+    if (patch.url                  !== undefined) dbPatch.url                    = patch.url                  ?? null;
 
     if (Object.keys(dbPatch).length > 0) {
       const { error } = await supabase.from('events').update(dbPatch).eq('id', id);

@@ -29,6 +29,8 @@ export interface CalendarEvent {
   eventType?: 'event' | 'reminder';
   travelTime?: string;
   repeat?: string;
+  repeatEndDate?: Date;
+  customRepeatInterval?: string;
   alert?: string;
   url?: string;
 }
