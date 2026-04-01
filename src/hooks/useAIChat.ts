@@ -17,7 +17,7 @@ function buildSystemPrompt(userName: string, events: CalendarEvent[]): string {
       : todayEvents
           .map(
             (e) =>
-              `• ${e.title} at ${format(e.start, 'h:mm a')} — ${e.priority} priority — ${
+              `• ${e.title} at ${format(e.start, 'HH:mm')} — ${e.priority} priority — ${
                 e.completed ? 'done ✓' : 'pending'
               }`
           )
@@ -100,7 +100,7 @@ function buildFallbackResponse(userText: string, events: CalendarEvent[]): strin
     return (
       `You have **${pending.length} task${pending.length !== 1 ? 's' : ''}** remaining today` +
       (done.length > 0 ? ` and already completed ${done.length}. Great work! 🎉` : '.') +
-      (pending[0] ? `\n\nUp next: **${pending[0].title}** at ${format(pending[0].start, 'h:mm a')}.` : '')
+      (pending[0] ? `\n\nUp next: **${pending[0].title}** at ${format(pending[0].start, 'HH:mm')}.` : '')
     );
   }
 

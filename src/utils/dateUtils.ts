@@ -8,7 +8,7 @@ export const formatDateLabel = (date: Date) => {
 };
 
 export const formatTimeRange = (start: Date, end: Date) => {
-  return `${format(start, 'p')} – ${format(end, 'p')}`;
+  return `${format(start, 'HH:mm')} – ${format(end, 'HH:mm')}`;
 };
 
 export const getGreeting = (now: Date) => {

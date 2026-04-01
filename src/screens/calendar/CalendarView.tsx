@@ -40,7 +40,7 @@ type SourceFilter = 'mine' | 'apple' | 'family' | 'all';
 type CalendarSection = 'daily' | 'school';
 
 export const CalendarView: React.FC = () => {
-  const { events, addEvent, updateEvent, deleteEvent, toggleComplete } = useEvents();
+  const { events, addEvent, updateEvent, deleteEvent, toggleComplete, refetch } = useEvents();
   const { family, members, sharedEvents } = useFamily();
   const { events: nativeEvents, permissionState, requestPermission, refresh: refreshNative } = useNativeCalendar();
   const { connected: untisConnected, timetable, subjectColorMap, loading: untisLoading, fetchTimetable } = useUntis();
@@ -83,15 +83,16 @@ export const CalendarView: React.FC = () => {
   const [permissionDismissed, setPermissionDismissed] = useState(false);
   const [section, setSection] = useState<CalendarSection>('daily');
 
-  // Refresh native calendar + Untis timetable whenever this tab gains focus
+  // Refresh all data sources whenever this tab gains focus
   useFocusEffect(
     useCallback(() => {
+      void refetch();
       void refreshNative();
       if (untisConnected) {
         const start = startOfWeek(selectedDate, { weekStartsOn: 1 });
         void fetchTimetable(start, addDays(start, 27));
       }
-    }, [refreshNative, untisConnected, fetchTimetable, selectedDate]),
+    }, [refetch, refreshNative, untisConnected, fetchTimetable, selectedDate]),
   );
 
   // Convert native calendar events → DisplayEvent
@@ -613,7 +614,7 @@ export const CalendarView: React.FC = () => {
         {Array.from({ length: dayTimeline.endHour - dayTimeline.startHour }).map((_, i) => {
           const hour = dayTimeline.startHour + i;
           const top = i * dayTimeline.hourHeight;
-          const label = format(new Date(0, 0, 0, hour, 0), 'ha').toLowerCase();
+          const label = format(new Date(0, 0, 0, hour, 0), 'HH:mm');
           const isNowHour =
             dayTimeline.showNow &&
             Math.floor(

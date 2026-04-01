@@ -161,7 +161,7 @@ export const NewTaskModal: React.FC<Props> = ({
         setStartTime(event.start);
         setEndDate(startOfDay(event.end));
         setEndTime(event.end);
-        setLocation(event.description ?? '');
+        setLocation(event.location ?? '');
         setAllDay(event.allDay ?? false);
         setTravelTime(event.travelTime ?? 'Ohne');
         setRepeat(event.repeat ?? 'Nie');
@@ -251,9 +251,8 @@ export const NewTaskModal: React.FC<Props> = ({
       end:                  evEnd,
       category,
       priority:             appMode === 'reminder' && isUrgent ? ('high' as EventPriority) : priority,
-      description:          appMode === 'event'
-                              ? (location.trim() || undefined)
-                              : (reminderNotes.trim() || undefined),
+      location:             appMode === 'event' ? (location.trim() || undefined) : undefined,
+      description:          appMode === 'reminder' ? (reminderNotes.trim() || undefined) : undefined,
       allDay:               appMode === 'event' ? allDay : false,
       eventType:            appMode as 'event' | 'reminder',
       travelTime:           appMode === 'event' && travelTime !== 'Ohne' ? travelTime : undefined,
@@ -267,10 +266,15 @@ export const NewTaskModal: React.FC<Props> = ({
 
     if (isEditMode && onSave && event) {
       onSave(event.id, payload);
+      handleClose();
     } else {
-      addEvent(payload);
+      addEvent(payload)
+        .then(() => handleClose())
+        .catch((err) => {
+          console.error('[NewTaskModal] addEvent failed:', err?.message ?? err);
+          alert('Fehler beim Speichern: ' + (err?.message ?? 'Unbekannter Fehler'));
+        });
     }
-    handleClose();
   }, [
     title, appMode, allDay, startDate, startTime, endDate, endTime,
     hasReminderTime, reminderDate, reminderTime, location, reminderNotes,

@@ -28,7 +28,9 @@ function unescape(value: string): string {
     .replace(/\\\\/g, '\\');
 }
 
-function parseDateTime(value: string): { date: Date; allDay: boolean } {
+const UTC_TZIDS = new Set(['utc', 'gmt', 'etc/utc', 'etc/gmt', 'utc+0', 'gmt+0']);
+
+function parseDateTime(value: string, tzid?: string): { date: Date; allDay: boolean } {
   // DATE-only format: YYYYMMDD
   if (!value.includes('T')) {
     const y = parseInt(value.slice(0, 4), 10);
@@ -44,7 +46,9 @@ function parseDateTime(value: string): { date: Date; allDay: boolean } {
   const h   = parseInt(value.slice(9, 11), 10);
   const min = parseInt(value.slice(11, 13), 10);
   const s   = parseInt(value.slice(13, 15), 10);
-  const isUTC = value.endsWith('Z');
+
+  // Treat as UTC if: Z suffix, or TZID is a known UTC alias
+  const isUTC = value.endsWith('Z') || (tzid ? UTC_TZIDS.has(tzid.toLowerCase()) : false);
 
   const date = isUTC
     ? new Date(Date.UTC(y, mo, d, h, min, s))
@@ -123,9 +127,14 @@ export function parseICS(content: string): ICSEvent[] {
     const propFull = line.slice(0, colonIdx);
     const rawValue = line.slice(colonIdx + 1);
 
-    // Extract property name (before first semicolon) and any params
+    // Extract property name (before first semicolon) and parse params
     const semiIdx  = propFull.indexOf(';');
     const propName = semiIdx === -1 ? propFull : propFull.slice(0, semiIdx);
+    const paramStr = semiIdx === -1 ? '' : propFull.slice(semiIdx + 1);
+
+    // Extract TZID from params (e.g. "TZID=Europe/Berlin")
+    const tzidMatch = paramStr.match(/(?:^|;)TZID=([^;]+)/i);
+    const tzid      = tzidMatch ? tzidMatch[1] : undefined;
 
     switch (propName.toUpperCase()) {
       case 'UID':
@@ -141,13 +150,13 @@ export function parseICS(content: string): ICSEvent[] {
         location = unescape(rawValue);
         break;
       case 'DTSTART': {
-        const parsed = parseDateTime(rawValue);
+        const parsed = parseDateTime(rawValue, tzid);
         startDate = parsed.date;
         allDay    = parsed.allDay;
         break;
       }
       case 'DTEND': {
-        const parsed = parseDateTime(rawValue);
+        const parsed = parseDateTime(rawValue, tzid);
         endDate = parsed.date;
         break;
       }

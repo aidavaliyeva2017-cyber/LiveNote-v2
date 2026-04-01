@@ -14,6 +14,7 @@ import * as FileSystem from 'expo-file-system';
 import { documentDirectory, getInfoAsync, readAsStringAsync } from 'expo-file-system/legacy';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
+import { useEvents } from '../../context/EventsContext';
 import { parseICS, ICSEvent } from '../../services/icsParser';
 import { importICSEventsToSupabase } from '../../services/icsEventService';
 import { colors, spacing, typography, borderRadius } from '../../theme';
@@ -64,6 +65,7 @@ const EventRow = ({
 export const ICSImportScreen: React.FC = () => {
   const navigation  = useNavigation();
   const { user }    = useAuth();
+  const { refetch } = useEvents();
 
   const [events,    setEvents]    = useState<ICSEvent[]>([]);
   const [selected,  setSelected]  = useState<Set<string>>(new Set());
@@ -158,16 +160,24 @@ export const ICSImportScreen: React.FC = () => {
 
   // ── Import selected events ────────────────────────────────────────────────
   const handleImport = useCallback(async () => {
-    if (!user) return;
+    console.log('[ICSImport] handleImport called — user:', user ? `id=${user.id}` : 'NULL (guest/not logged in)');
+    if (!user) {
+      Alert.alert('Nicht eingeloggt', 'Du musst eingeloggt sein um Termine zu importieren. Gäste können keine Termine speichern.');
+      return;
+    }
     const toImport = events.filter(e => selected.has(e.id));
     if (toImport.length === 0) {
       Alert.alert('Keine Auswahl', 'Bitte wähle mindestens einen Termin aus.');
       return;
     }
+    console.log('[ICSImport] Importing', toImport.length, 'events for user_id:', user.id);
 
     setImporting(true);
     try {
       const { imported, failed } = await importICSEventsToSupabase(toImport, user.id);
+
+      // Refresh the EventsContext so the calendar shows the imported events
+      await refetch();
 
       if (failed > 0) {
         Alert.alert(
