@@ -922,15 +922,17 @@ export const NewTaskModal: React.FC<Props> = ({
                 <Text style={styles.pickerDone}>Fertig</Text>
               </TouchableOpacity>
             </View>
-            <DateTimePicker
-              value={pickerTime}
-              mode="time"
-              display="spinner"
-              onChange={handleTimePickerChange}
-              textColor={colors.textPrimary}
-              style={styles.nativePicker}
-              minuteInterval={5}
-            />
+            <View style={styles.pickerCenter}>
+              <DateTimePicker
+                value={pickerTime}
+                mode="time"
+                display="spinner"
+                onChange={handleTimePickerChange}
+                textColor={colors.textPrimary}
+                style={styles.nativePicker}
+                minuteInterval={5}
+              />
+            </View>
           </View>
         </View>
       )}
@@ -1312,8 +1314,12 @@ const styles = StyleSheet.create({
     color: colors.primary,
     textAlign: 'right',
   },
-  nativePicker: {
+  pickerCenter: {
+    alignItems: 'center',
     width: '100%',
+  },
+  nativePicker: {
+    width: 300,
     height: 216,
   },
 

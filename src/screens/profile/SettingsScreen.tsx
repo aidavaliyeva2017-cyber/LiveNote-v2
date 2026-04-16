@@ -215,7 +215,7 @@ export const SettingsScreen: React.FC = () => {
             <Ionicons name="flash" size={18} color={primary} />
             <Text style={[styles.proMiniText, { color: primary }]}>LiveNote Pro</Text>
             <View style={styles.activeBadge}>
-              <Text style={styles.activeBadgeText}>Active</Text>
+              <Text style={styles.activeBadgeText}>Coming Soon</Text>
             </View>
           </View>
           <View style={styles.divider} />

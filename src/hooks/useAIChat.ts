@@ -2,10 +2,9 @@ import { useState, useCallback, useRef } from 'react';
 import { format } from 'date-fns';
 import { ChatMessage } from '../types/ai';
 import { CalendarEvent } from '../types/event';
-import { ENV } from '../config/env';
-import { AI_MODEL } from '../constants/api';
+import { AI_MODEL, OLLAMA_BASE_URL } from '../constants/api';
 
-// ─── Prompt builder (works with CalendarEvent[]) ─────────────────────────────
+// ─── Prompt builder ───────────────────────────────────────────────────────────
 function buildSystemPrompt(userName: string, events: CalendarEvent[]): string {
   const today = new Date();
   const todayEvents = events.filter(
@@ -38,34 +37,91 @@ Your capabilities:
 Keep replies concise and friendly. Use bullet points for lists. When the user wants to schedule something, confirm the details before creating it.`;
 }
 
-// ─── Anthropic REST API call (works in React Native) ─────────────────────────
-async function callAnthropicAPI(
+// ─── Ollama chat call ─────────────────────────────────────────────────────────
+async function callOllamaAPI(
   messages: { role: 'user' | 'assistant'; content: string }[],
-  systemPrompt: string,
-  apiKey: string
+  systemPrompt: string
 ): Promise<string> {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: AI_MODEL,
-      max_tokens: 1024,
-      system: systemPrompt,
-      messages,
+      messages: [{ role: 'system', content: systemPrompt }, ...messages],
+      stream: false,
     }),
   });
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`Anthropic API error ${response.status}: ${err}`);
+    throw new Error(`Ollama error ${response.status}: ${err}`);
   }
 
   const data = await response.json();
-  return data.content?.[0]?.text ?? '';
+  return data.message?.content ?? '';
+}
+
+// ─── Event extraction via Ollama ──────────────────────────────────────────────
+async function extractEventFromMessage(
+  userText: string
+): Promise<Pick<CalendarEvent, 'title' | 'start' | 'end'> | null> {
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+
+  const systemPrompt = `You are a calendar event extractor. Today is ${format(today, 'EEEE yyyy-MM-dd')}.
+
+If the user wants to schedule something, respond with ONLY valid JSON in this exact format (no other text):
+{"title":"Event Title","date":"YYYY-MM-DD","time":"HH:MM","duration_minutes":60}
+
+Rules:
+- "tomorrow" = ${format(tomorrow, 'yyyy-MM-dd')}
+- "today" = ${format(today, 'yyyy-MM-dd')}
+- Use 24-hour time (e.g. "09:00", "14:30")
+- Default duration: 60 minutes
+- If no time mentioned, use "09:00"
+
+If no scheduling intent, respond with exactly: null`;
+
+  try {
+    const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: AI_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userText },
+        ],
+        stream: false,
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    const raw = (data.message?.content ?? '').trim();
+
+    if (!raw || raw === 'null' || !raw.includes('{')) return null;
+
+    const jsonMatch = raw.match(/\{[\s\S]*?\}/);
+    if (!jsonMatch) return null;
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (!parsed.title || !parsed.date) return null;
+
+    // new Date("YYYY-MM-DD") parses as UTC midnight → wrong local date in non-UTC timezones.
+    const [hourStr, minStr] = (parsed.time ?? '09:00').split(':');
+    const [py, pm, pd] = parsed.date.split('-').map(Number);
+    const start = new Date(py, pm - 1, pd, parseInt(hourStr, 10), parseInt(minStr ?? '0', 10), 0, 0);
+    if (isNaN(start.getTime())) return null;
+
+    const end = new Date(start.getTime() + (parsed.duration_minutes ?? 60) * 60 * 1000);
+
+    return { title: parsed.title, start, end };
+  } catch {
+    return null;
+  }
 }
 
 // ─── Simulate streaming reveal ────────────────────────────────────────────────
@@ -80,10 +136,10 @@ async function revealText(
     onChunk(fullText.slice(0, i));
     await new Promise<void>((resolve) => setTimeout(resolve, 16));
   }
-  if (!signal.aborted) onChunk(fullText); // ensure full text at the end
+  if (!signal.aborted) onChunk(fullText);
 }
 
-// ─── Fallback when no API key is set ─────────────────────────────────────────
+// ─── Fallback when Ollama is not reachable ────────────────────────────────────
 function buildFallbackResponse(userText: string, events: CalendarEvent[]): string {
   const lower = userText.toLowerCase();
   const today = new Date();
@@ -91,7 +147,7 @@ function buildFallbackResponse(userText: string, events: CalendarEvent[]): strin
     (e) => e.start.toDateString() === today.toDateString()
   );
 
-  if (lower.includes("today") || lower.includes("schedule")) {
+  if (lower.includes('today') || lower.includes('schedule')) {
     if (todayEvents.length === 0) {
       return "Your day is completely free! Add some tasks via the + button and I'll help you stay on track.";
     }
@@ -104,20 +160,20 @@ function buildFallbackResponse(userText: string, events: CalendarEvent[]): strin
     );
   }
 
-  if (lower.includes("add") || lower.includes("schedule") || lower.includes("create")) {
+  if (lower.includes('add') || lower.includes('schedule') || lower.includes('create')) {
     return "Sure! Tell me what you want to schedule — for example: *'Doctor appointment next Tuesday at 3pm'* or *'Study session tomorrow morning for 2 hours'*.";
   }
 
-  if (lower.includes("study") || lower.includes("exam") || lower.includes("plan")) {
+  if (lower.includes('study') || lower.includes('exam') || lower.includes('plan')) {
     return "I can help you create a study plan! Tell me:\n• What subject or topic?\n• When is the deadline or exam?\n• How many hours can you study per day?";
   }
 
-  if (lower.includes("tip") || lower.includes("productivity")) {
+  if (lower.includes('tip') || lower.includes('productivity')) {
     const tips = [
-      "**Time blocking** works better than to-do lists. Reserve specific time slots for specific tasks — treat them like appointments.",
-      "Use the **2-minute rule**: if a task takes less than 2 minutes, do it immediately rather than scheduling it.",
-      "Your most important task deserves your **first 90 minutes**. Protect your mornings from meetings and distractions.",
-      "**Batch similar tasks** together. Answer all messages at once, make all calls in one block, rather than context-switching constantly.",
+      '**Time blocking** works better than to-do lists. Reserve specific time slots for specific tasks — treat them like appointments.',
+      'Use the **2-minute rule**: if a task takes less than 2 minutes, do it immediately rather than scheduling it.',
+      'Your most important task deserves your **first 90 minutes**. Protect your mornings from meetings and distractions.',
+      '**Batch similar tasks** together. Answer all messages at once, make all calls in one block, rather than context-switching constantly.',
     ];
     return tips[Math.floor(Math.random() * tips.length)];
   }
@@ -129,6 +185,8 @@ function buildFallbackResponse(userText: string, events: CalendarEvent[]): strin
 export function useAIChat(userName: string, events: CalendarEvent[]) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [ollamaError, setOllamaError] = useState(false);
+  const [pendingEvent, setPendingEvent] = useState<Pick<CalendarEvent, 'title' | 'start' | 'end'> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
@@ -164,16 +222,26 @@ export function useAIChat(userName: string, events: CalendarEvent[]) {
 
         let fullResponse: string;
 
-        const apiKey = ENV.ANTHROPIC_API_KEY;
-        if (apiKey && apiKey.length > 10) {
-          fullResponse = await callAnthropicAPI(history, systemPrompt, apiKey);
-        } else {
-          // Demo mode — no API key needed
-          await new Promise((r) => setTimeout(r, 600)); // simulate latency
-          fullResponse = buildFallbackResponse(text, events);
+        try {
+          // Run chat response and event extraction in parallel
+          const [response, eventDraft] = await Promise.all([
+            callOllamaAPI(history, systemPrompt),
+            extractEventFromMessage(text),
+          ]);
+          fullResponse = response;
+          setOllamaError(false);
+          if (eventDraft) setPendingEvent(eventDraft);
+        } catch (ollamaErr) {
+          if (ollamaErr instanceof TypeError) {
+            // Network error — Ollama not reachable
+            setOllamaError(true);
+            await new Promise((r) => setTimeout(r, 300));
+            fullResponse = buildFallbackResponse(text, events);
+          } else {
+            throw ollamaErr;
+          }
         }
 
-        // Reveal text progressively
         await revealText(
           fullResponse,
           (partial) => {
@@ -207,6 +275,16 @@ export function useAIChat(userName: string, events: CalendarEvent[]) {
   }, []);
 
   const clearHistory = useCallback(() => setMessages([]), []);
+  const clearPendingEvent = useCallback(() => setPendingEvent(null), []);
 
-  return { messages, isStreaming, sendMessage, stopStreaming, clearHistory };
+  return {
+    messages,
+    isStreaming,
+    ollamaError,
+    pendingEvent,
+    clearPendingEvent,
+    sendMessage,
+    stopStreaming,
+    clearHistory,
+  };
 }

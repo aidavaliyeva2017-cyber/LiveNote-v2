@@ -19,7 +19,9 @@ import { useAIChat } from '../../hooks/useAIChat';
 import { ChatBubble } from '../../components/chat/ChatBubble';
 import { TypingIndicator } from '../../components/chat/TypingIndicator';
 import { SuggestedActions } from '../../components/chat/SuggestedActions';
+import { EventConfirmationModal } from '../../components/modals/EventConfirmationModal';
 import { ChatMessage } from '../../types/ai';
+import { CalendarEvent } from '../../types/event';
 
 const WELCOME_MESSAGE: ChatMessage = {
   id: 'welcome',
@@ -31,8 +33,8 @@ const WELCOME_MESSAGE: ChatMessage = {
 
 export const AIChatScreen: React.FC = () => {
   const c = useColors();
-  const { events } = useEvents();
-  const { messages, isStreaming, sendMessage, stopStreaming, clearHistory } =
+  const { events, addEvent } = useEvents();
+  const { messages, isStreaming, ollamaError, pendingEvent, clearPendingEvent, sendMessage, stopStreaming, clearHistory } =
     useAIChat('User', events);
 
   const [input, setInput] = useState('');
@@ -69,6 +71,14 @@ export const AIChatScreen: React.FC = () => {
     clearHistory();
     setShowSuggestions(true);
   }, [clearHistory]);
+
+  const handleConfirmEvent = useCallback(
+    async (event: Omit<CalendarEvent, 'id'>) => {
+      clearPendingEvent();
+      await addEvent(event);
+    },
+    [addEvent, clearPendingEvent]
+  );
 
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<ChatMessage>) => <ChatBubble message={item} />,
@@ -109,6 +119,15 @@ export const AIChatScreen: React.FC = () => {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* ── Ollama error banner ── */}
+      {ollamaError && (
+        <View style={styles.ollamaBanner}>
+          <Text style={styles.ollamaBannerText}>
+            ⚠️ Ollama nicht gefunden. Bitte installiere Ollama von ollama.com und starte es.
+          </Text>
+        </View>
+      )}
 
       {/* ── Messages ── */}
       <FlatList
@@ -160,6 +179,14 @@ export const AIChatScreen: React.FC = () => {
           </TouchableOpacity>
         )}
       </View>
+      {/* ── Event confirmation modal ── */}
+      <EventConfirmationModal
+        key={pendingEvent ? `${pendingEvent.title}-${pendingEvent.start.getTime()}` : 'empty'}
+        visible={pendingEvent !== null}
+        draft={pendingEvent}
+        onCancel={clearPendingEvent}
+        onConfirm={handleConfirmEvent}
+      />
     </KeyboardAvoidingView>
   );
 };
@@ -237,6 +264,23 @@ const styles = StyleSheet.create({
   clearBtnDisabled: {
     color: colors.textTertiary,
     opacity: 0.4,
+  },
+
+  // Ollama error banner
+  ollamaBanner: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: '#FFF3CD',
+    borderRadius: borderRadius.medium,
+    borderWidth: 1,
+    borderColor: '#FFEAA7',
+  },
+  ollamaBannerText: {
+    fontSize: typography.caption,
+    color: '#856404',
+    lineHeight: 18,
   },
 
   // Messages

@@ -7,7 +7,6 @@ import { ProfileStackNavigator } from './ProfileStack';
 import { colors, typography } from '../theme';
 import { Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 
 export type MainTabParamList = {
@@ -26,7 +25,7 @@ const TabLabel = ({
 }) => (
   <Text
     style={{
-      fontSize: typography.caption,
+      fontSize: 10,
       color: focused ? primary : colors.textSecondary,
     }}
   >
@@ -36,11 +35,6 @@ const TabLabel = ({
 
 export const MainTabsNavigator = () => {
   const { gradient, primary } = useTheme();
-  const { bottom } = useSafeAreaInsets();
-
-  // 50px for icons + labels, then the safe area gap above the home indicator
-  const TAB_HEIGHT = 50 + bottom;
-
   return (
     <Tab.Navigator
       screenOptions={{
@@ -49,9 +43,10 @@ export const MainTabsNavigator = () => {
           backgroundColor: gradient[0],
           borderTopColor: primary + '33',
           borderTopWidth: 1,
-          height: TAB_HEIGHT,
-          paddingTop: 8,
-          paddingBottom: bottom > 0 ? bottom - 4 : 8,
+          height: 48,
+          paddingTop: 4,
+          paddingBottom: 4,
+          marginBottom: 0,
         },
       }}
     >

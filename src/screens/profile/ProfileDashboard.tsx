@@ -103,7 +103,7 @@ export const ProfileDashboard: React.FC = () => {
   }, [events]);
 
   const displayName = user?.email?.split('@')[0] ?? 'User';
-  const initials    = displayName.slice(0, 2).toUpperCase();
+  const initials    = displayName.charAt(0).toUpperCase();
   const email       = user?.email ?? '';
 
   const handleSignOut = () => {
@@ -136,9 +136,6 @@ export const ProfileDashboard: React.FC = () => {
             <View style={[styles.avatar, { borderColor: primary }]}>
               <Text style={[styles.avatarInitials, { color: primary }]}>{initials}</Text>
             </View>
-            <TouchableOpacity style={[styles.cameraBtn, { backgroundColor: primary }]}>
-              <Ionicons name="camera" size={12} color="#fff" />
-            </TouchableOpacity>
           </View>
           <Text style={styles.userName}>{displayName}</Text>
           <Text style={styles.userEmail}>{email}</Text>
@@ -228,15 +225,11 @@ export const ProfileDashboard: React.FC = () => {
               <View style={styles.proTitleRow}>
                 <Text style={[styles.proTitle, { color: primary }]}>LiveNote Pro</Text>
                 <View style={styles.activeBadge}>
-                  <Text style={styles.activeBadgeText}>Active</Text>
+                  <Text style={styles.activeBadgeText}>Coming Soon</Text>
                 </View>
               </View>
-              <Text style={styles.proPrice}>$2.99/month</Text>
             </View>
           </View>
-          <Text style={styles.proDesc}>
-            Unlimited AI conversations, advanced scheduling, priority support.
-          </Text>
         </View>
 
         {/* ── Sign Out ── */}

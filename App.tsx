@@ -1,8 +1,8 @@
 import React, { useEffect } from 'react';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
-import { SafeAreaView, StyleSheet } from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { StyleSheet } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AuthProvider } from './src/context/AuthContext';
 import { EventsProvider } from './src/context/EventsContext';
@@ -38,7 +38,7 @@ const AppInner = () => {
               <EventsProvider>
                 <GamificationProvider>
                   <NavigationContainer theme={navTheme}>
-                    <SafeAreaView style={styles.safeArea}>
+                    <SafeAreaView style={styles.safeArea} edges={['top']}>
                       <StatusBar style="light" />
                       <RootNavigator />
                     </SafeAreaView>

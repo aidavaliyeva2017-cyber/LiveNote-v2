@@ -84,7 +84,10 @@ function eventToRow(event: Omit<CalendarEvent, 'id'>, userId: string) {
     event_type:  event.eventType   ?? 'event',
     travel_time:            event.travelTime           ?? null,
     repeat_:                event.repeat               ?? null,
-    repeat_end_date:        event.repeatEndDate?.toISOString() ?? null,
+    // Store at noon UTC so any UTC±12 timezone reads back the same calendar date
+    repeat_end_date:        event.repeatEndDate
+                              ? `${format(event.repeatEndDate, 'yyyy-MM-dd')}T12:00:00Z`
+                              : null,
     custom_repeat_interval: event.customRepeatInterval ?? null,
     alert:                  event.alert                ?? null,
     url:                    event.url                  ?? null,
@@ -117,6 +120,10 @@ function expandRecurringEvents(baseEvents: CalendarEvent[]): CalendarEvent[] {
       let next: Date;
       if (evt.repeat === 'Täglich') {
         next = addDays(current, 1);
+      } else if (evt.repeat === 'Mo–Fr') {
+        next = addDays(current, 1);
+        if (next.getDay() === 6) next = addDays(next, 2); // Saturday → Monday
+        else if (next.getDay() === 0) next = addDays(next, 1); // Sunday → Monday
       } else if (evt.repeat === 'Wöchentlich') {
         next = addDays(current, 7);
       } else if (evt.repeat === 'Alle 2 Wochen') {
@@ -125,8 +132,16 @@ function expandRecurringEvents(baseEvents: CalendarEvent[]): CalendarEvent[] {
         next = addMonths(current, 1);
       } else if (evt.repeat === 'Jährlich') {
         next = addMonths(current, 12);
+      } else if (evt.repeat === 'Benutzerdefiniert') {
+        const interval = evt.customRepeatInterval ?? 'Jeden Tag';
+        if (interval === 'Jeden Tag')       next = addDays(current, 1);
+        else if (interval === 'Jede Woche') next = addDays(current, 7);
+        else if (interval === 'Alle 2 Wochen') next = addDays(current, 14);
+        else if (interval === 'Jeden Monat')   next = addMonths(current, 1);
+        else if (interval === 'Jedes Jahr')    next = addMonths(current, 12);
+        else break;
       } else {
-        break; // 'Benutzerdefiniert' not yet expanded
+        break;
       }
 
       if (toDateKey(next) > endKey) break;
@@ -226,7 +241,7 @@ export const EventsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (patch.eventType   !== undefined) dbPatch.event_type  = patch.eventType;
     if (patch.travelTime           !== undefined) dbPatch.travel_time            = patch.travelTime           ?? null;
     if (patch.repeat               !== undefined) dbPatch.repeat_                = patch.repeat               ?? null;
-    if (patch.repeatEndDate        !== undefined) dbPatch.repeat_end_date        = patch.repeatEndDate?.toISOString() ?? null;
+    if (patch.repeatEndDate        !== undefined) dbPatch.repeat_end_date        = patch.repeatEndDate ? `${format(patch.repeatEndDate, 'yyyy-MM-dd')}T12:00:00Z` : null;
     if (patch.customRepeatInterval !== undefined) dbPatch.custom_repeat_interval = patch.customRepeatInterval  ?? null;
     if (patch.alert                !== undefined) dbPatch.alert                  = patch.alert                ?? null;
     if (patch.url                  !== undefined) dbPatch.url                    = patch.url                  ?? null;

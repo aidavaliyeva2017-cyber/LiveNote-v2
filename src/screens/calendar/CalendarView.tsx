@@ -173,7 +173,10 @@ export const CalendarView: React.FC = () => {
 
 
   const handleDayPress = (day: DateData) => {
-    setSelectedDate(new Date(day.dateString));
+    // new Date("YYYY-MM-DD") parses as UTC midnight → wrong local date in non-UTC timezones.
+    // Parsing components manually creates local midnight instead.
+    const [y, m, d] = day.dateString.split('-').map(Number);
+    setSelectedDate(new Date(y, m - 1, d));
     setMode('day');
   };
 
@@ -195,8 +198,8 @@ export const CalendarView: React.FC = () => {
   const headerRangeLabel = useMemo(() => {
     if (mode === 'month') return format(selectedDate, 'MMMM yyyy');
     if (mode === 'week') {
-      const start = startOfWeek(selectedDate, { weekStartsOn: 0 });
-      const end = endOfWeek(selectedDate, { weekStartsOn: 0 });
+      const start = startOfWeek(selectedDate, { weekStartsOn: 1 });
+      const end = endOfWeek(selectedDate, { weekStartsOn: 1 });
       return `${format(start, 'MMM d')} – ${format(end, 'MMM d')}`;
     }
     return format(selectedDate, 'EEEE, MMMM d');
@@ -223,7 +226,7 @@ export const CalendarView: React.FC = () => {
   };
 
   const dayTimeline = useMemo(() => {
-    const startHour = 6;
+    const startHour = 0;
     const endHour = 24;
     const hourHeight = 64;
     const pxPerMinute = hourHeight / 60;
@@ -561,7 +564,8 @@ export const CalendarView: React.FC = () => {
       } as any}
       dayComponent={({ date }: { date?: DateData }) => {
         if (!date) return <View />;
-        const d = new Date(date.dateString);
+        const [dy, dm, dd] = date.dateString.split('-').map(Number);
+        const d = new Date(dy, dm - 1, dd);
         const key = formatDateKey(d);
         const isSelected = key === formatDateKey(selectedDate);
         const day = d.getDate();
@@ -603,13 +607,6 @@ export const CalendarView: React.FC = () => {
       contentContainerStyle={{ paddingBottom: 96 }}
       onLayout={handleTimelineLayout}
     >
-      {dayEvents.length === 0 && (
-        <View style={styles.emptyDay}>
-          <Ionicons name="calendar-outline" size={36} color={colors.textTertiary} />
-          <Text style={styles.emptyDayTitle}>No events</Text>
-          <Text style={styles.emptyDaySubtitle}>Tap + to add something</Text>
-        </View>
-      )}
       <View style={[styles.timeline, { height: dayTimeline.contentHeight }]}>
         {Array.from({ length: dayTimeline.endHour - dayTimeline.startHour }).map((_, i) => {
           const hour = dayTimeline.startHour + i;
@@ -713,7 +710,7 @@ export const CalendarView: React.FC = () => {
   );
 
   const renderWeek = () => {
-    const start = startOfWeek(selectedDate, { weekStartsOn: 0 });
+    const start = startOfWeek(selectedDate, { weekStartsOn: 1 });
     const days = Array.from({ length: 7 }).map((_, i) => addDays(start, i));
     const dayKey = formatDateKey(selectedDate);
     const selectedEvents = filteredEvents
@@ -722,7 +719,7 @@ export const CalendarView: React.FC = () => {
 
     return (
       <View style={styles.weekWrap}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.weekStrip}>
+        <View style={styles.weekStrip}>
           {days.map((d) => {
             const key = formatDateKey(d);
             const active = key === dayKey;
@@ -734,7 +731,7 @@ export const CalendarView: React.FC = () => {
                 onPress={() => setSelectedDate(d)}
               >
                 <Text style={[styles.weekDow, active && { color: c.primary }]}>
-                  {format(d, 'EEE')}
+                  {format(d, 'EEEEE')}
                 </Text>
                 <Text style={[styles.weekDom, active && styles.weekDomActive]}>
                   {format(d, 'd')}
@@ -743,7 +740,7 @@ export const CalendarView: React.FC = () => {
               </TouchableOpacity>
             );
           })}
-        </ScrollView>
+        </View>
 
         <ScrollView style={styles.weekList} contentContainerStyle={{ paddingBottom: 96 }}>
           {selectedEvents.length === 0 ? (
@@ -835,7 +832,6 @@ export const CalendarView: React.FC = () => {
         <Text style={styles.heading}>Calendar</Text>
         {section === 'daily' && (
           <TouchableOpacity style={styles.filterPill} onPress={() => setFilterVisible(true)}>
-            <Text style={styles.filterIcon}>⎇</Text>
             <Text style={styles.filterPillText}>Filter</Text>
           </TouchableOpacity>
         )}
@@ -893,41 +889,12 @@ export const CalendarView: React.FC = () => {
                 active && { backgroundColor: c.primary + '22', borderColor: c.primary },
               ]}
             >
-              {f === 'apple' && (
-                <Ionicons
-                  name="calendar-outline"
-                  size={11}
-                  color={active ? c.primary : colors.textSecondary}
-                  style={{ marginRight: 3 }}
-                />
-              )}
               <Text style={[styles.sourceFilterText, active && { color: c.primary }]}>{label}</Text>
             </TouchableOpacity>
           );
         })}
       </View>
 
-      {/* Permission banner — shown when undetermined and not dismissed */}
-      {permissionState === 'undetermined' && !permissionDismissed && (
-        <View style={styles.permBanner}>
-          <Ionicons name="calendar-outline" size={18} color={c.primary} />
-          <Text style={styles.permBannerText}>
-            Zeige Apple Kalender-Termine in LiveNote an
-          </Text>
-          <TouchableOpacity
-            style={[styles.permBannerBtn, { backgroundColor: c.primary }]}
-            onPress={requestPermission}
-          >
-            <Text style={styles.permBannerBtnText}>Erlauben</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setPermissionDismissed(true)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="close" size={16} color={colors.textTertiary} />
-          </TouchableOpacity>
-        </View>
-      )}
 
       {/* Denied banner */}
       {permissionState === 'denied' && sourceFilter === 'apple' && (
@@ -1230,13 +1197,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   weekStrip: {
-    maxHeight: 76,
+    flexDirection: 'row',
     marginBottom: spacing.md,
   },
   weekDayPill: {
-    width: 72,
-    paddingVertical: spacing.sm,
-    marginRight: spacing.sm,
+    flex: 1,
+    paddingVertical: 6,
+    marginHorizontal: 2,
     borderRadius: borderRadius.large,
     backgroundColor: 'rgba(26,31,46,0.38)',
     borderWidth: 1,
@@ -1250,16 +1217,16 @@ const styles = StyleSheet.create({
   },
   weekDow: {
     color: colors.textSecondary,
-    fontSize: typography.tiny,
+    fontSize: 10,
     fontWeight: typography.semibold as any,
   },
   weekDowActive: {
     color: colors.primary,
   },
   weekDom: {
-    marginTop: 4,
+    marginTop: 2,
     color: colors.textPrimary,
-    fontSize: typography.body,
+    fontSize: typography.caption,
     fontWeight: typography.bold as any,
   },
   weekDomActive: {
@@ -1441,6 +1408,7 @@ const styles = StyleSheet.create({
   // Source filter
   sourceFilterRow: {
     flexDirection: 'row',
+    justifyContent: 'center',
     marginTop: spacing.sm,
     marginHorizontal: spacing.lg,
     gap: spacing.sm,
@@ -1452,11 +1420,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(26,31,46,0.55)',
     borderWidth: 1,
     borderColor: 'rgba(45,53,72,0.9)',
+    alignItems: 'center',
   },
   sourceFilterText: {
     fontSize: typography.caption,
     fontWeight: typography.semibold as any,
     color: colors.textSecondary,
+    textAlign: 'center',
   },
 
   // Permission banners
