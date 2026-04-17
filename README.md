@@ -1,4 +1,4 @@
-# LiveNote 📅
+# LiveNote 
 
 > AI-powered calendar that turns plain language into a structured schedule — built for students.
 
